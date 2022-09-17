@@ -1,6 +1,8 @@
-.idea/
-__pycache__/
-wandb/
-dataaset/
+.idea
+
+__pycache__
+wandb
+dataset
+checkpoints
 
 test.py

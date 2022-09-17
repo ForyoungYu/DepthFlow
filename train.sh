@@ -4,6 +4,7 @@ python train.py \
     --name 'MyNet' \
     --dataset 'nyu' \
     --epochs 10 \
-    --bs 2 \
+    --bs 8 \
     --workers 8 \
-    --same_lr
+    # --same_lr \
+    # --distributed

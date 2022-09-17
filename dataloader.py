@@ -72,7 +72,7 @@ class DataLoadPreprocess(Dataset):
         self.args = args
         if mode == 'online_eval':
             with open(args.filenames_file_eval, 'r') as f:
-                self.filenames = f.readlines()
+                self.filenames = f.readlines()  # return list
         else:
             with open(args.filenames_file, 'r') as f:
                 self.filenames = f.readlines()
@@ -83,8 +83,8 @@ class DataLoadPreprocess(Dataset):
         self.is_for_online_eval = is_for_online_eval
 
     def __getitem__(self, idx):
-        sample_path = self.filenames[idx]
-        focal = float(sample_path.split()[2])
+        sample_path = self.filenames[idx]  # sample list
+        focal = float(sample_path.split()[2])  # split default is space
 
         if self.mode == 'train':
             if self.args.dataset == 'kitti' and self.args.use_right is True and random.random() > 0.5:

@@ -137,7 +137,7 @@ def resize_image(img):
 
     height = (np.ceil(height_orig / scale / 32) * 32).astype(int)
     width = (np.ceil(width_orig / scale / 32) * 32).astype(int)
-    print(height, width)
+
     img_resized = cv2.resize(img, (width, height), interpolation=cv2.INTER_AREA)
 
     img_resized = (

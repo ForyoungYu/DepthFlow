@@ -41,7 +41,7 @@ def compute_errors(gt, pred):
 #     mean = torch.Tensor([0.485, 0.456, 0.406]).view(1, 3, 1, 1).to(device)
 #     std = torch.Tensor([0.229, 0.224, 0.225]).view(1, 3, 1, 1).to(device)
 #     return x * std + mean
-#
+
 def predict_tta(model, image, args):
     pred = model(image)[-1]
     #     pred = utils.depth_norm(pred)
@@ -163,9 +163,9 @@ if __name__ == '__main__':
 
     parser.add_argument("--dataset", default='nyu', type=str, help="Dataset to train on")
 
-    parser.add_argument("--data_path", default='../dataset/nyu/sync/', type=str,
+    parser.add_argument("--data_path", default='dataset/nyu/sync/', type=str,
                         help="path to dataset")
-    parser.add_argument("--gt_path", default='../dataset/nyu/sync/', type=str,
+    parser.add_argument("--gt_path", default='dataset/nyu/sync/', type=str,
                         help="path to dataset gt")
 
     parser.add_argument('--filenames_file',
@@ -180,9 +180,9 @@ if __name__ == '__main__':
     parser.add_argument('--do_kb_crop', help='if set, crop input images as kitti benchmark images', action='store_true')
 
     parser.add_argument('--data_path_eval',
-                        default="../dataset/nyu/official_splits/test/",
+                        default="dataset/nyu/official_splits/test/",
                         type=str, help='path to the data for online evaluation')
-    parser.add_argument('--gt_path_eval', default="../dataset/nyu/official_splits/test/",
+    parser.add_argument('--gt_path_eval', default="dataset/nyu/official_splits/test/",
                         type=str, help='path to the groundtruth data for online evaluation')
     parser.add_argument('--filenames_file_eval',
                         default="./train_test_inputs/nyudepthv2_test_files_with_gt.txt",

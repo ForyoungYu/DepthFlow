@@ -4,7 +4,6 @@ import torch.nn as nn
 from einops import rearrange
 from .backbone.efficientformer import EfficientFormer
 from .head.DPTHead import FeatureFusionBlock_custom
-from .utils import _make_scratch, Interpolate
 
 # 每个stage的MB输出维度
 EfficientFormer_width = {
@@ -19,6 +18,97 @@ EfficientFormer_depth = {
     'l3': [4, 4, 12, 6],
     'l7': [6, 6, 18, 8],
 }
+
+def _make_scratch(in_shape, out_shape, groups=1, expand=False):
+    """
+    不改变map的形状, 只改变通道数
+    """
+    scratch = nn.Module()
+
+    out_shape1 = out_shape
+    out_shape2 = out_shape
+    out_shape3 = out_shape
+    out_shape4 = out_shape
+    if expand == True:
+        out_shape1 = out_shape
+        out_shape2 = out_shape * 2
+        out_shape3 = out_shape * 4
+        out_shape4 = out_shape * 8
+
+    scratch.layer1_rn = nn.Conv2d(
+        in_shape[0],
+        out_shape1,
+        kernel_size=3,
+        stride=1,
+        padding=1,
+        bias=False,
+        groups=groups,
+    )
+    scratch.layer2_rn = nn.Conv2d(
+        in_shape[1],
+        out_shape2,
+        kernel_size=3,
+        stride=1,
+        padding=1,
+        bias=False,
+        groups=groups,
+    )
+    scratch.layer3_rn = nn.Conv2d(
+        in_shape[2],
+        out_shape3,
+        kernel_size=3,
+        stride=1,
+        padding=1,
+        bias=False,
+        groups=groups,
+    )
+    scratch.layer4_rn = nn.Conv2d(
+        in_shape[3],
+        out_shape4,
+        kernel_size=3,
+        stride=1,
+        padding=1,
+        bias=False,
+        groups=groups,
+    )
+
+    return scratch
+
+class Interpolate(nn.Module):
+    """Interpolation module."""
+
+    def __init__(self, scale_factor, mode, align_corners=False):
+        """Init.
+
+        Args:
+            scale_factor (float): scaling
+            mode (str): interpolation mode
+        """
+        super(Interpolate, self).__init__()
+
+        self.interp = nn.functional.interpolate
+        self.scale_factor = scale_factor
+        self.mode = mode
+        self.align_corners = align_corners
+
+    def forward(self, x):
+        """Forward pass.
+
+        Args:
+            x (tensor): input
+
+        Returns:
+            tensor: interpolated data
+        """
+
+        x = self.interp(
+            x,
+            scale_factor=self.scale_factor,
+            mode=self.mode,
+            align_corners=self.align_corners,
+        )
+
+        return x
 
 def _make_fusion_block(features, use_bn):
     return FeatureFusionBlock_custom(
@@ -64,14 +154,14 @@ class efficientformer_l7_feat(EfficientFormer):
 
 # My Code
 class MyNet(nn.Module):
-    def __init__(self, head, features=256, use_bn=False):
+    def __init__(self, head, features=256, use_bn=True):
         super().__init__()
 
         # backbone
         self.backbone = efficientformer_l1_feat()
 
         # neck
-        # ? scratch是个什么神奇的东西
+        #? scratch是个什么神奇的东西
         self.scratch = _make_scratch(EfficientFormer_width['l1'], features)
         self.scratch.refinenet1 = _make_fusion_block(features, use_bn)
         self.scratch.refinenet2 = _make_fusion_block(features, use_bn)
@@ -89,22 +179,22 @@ class MyNet(nn.Module):
         layer_3_rn = self.scratch.layer3_rn(out[2])
         layer_4_rn = self.scratch.layer4_rn(out[3])
         
-        print('===layer===')
-        print(layer_1_rn.shape)
-        print(layer_2_rn.shape)
-        print(layer_3_rn.shape)
-        print(layer_4_rn.shape)
+        # print('===layer===')
+        # print(layer_1_rn.shape)
+        # print(layer_2_rn.shape)
+        # print(layer_3_rn.shape)
+        # print(layer_4_rn.shape)
 
         path_4 = self.scratch.refinenet4(layer_4_rn)
         path_3 = self.scratch.refinenet3(path_4, layer_3_rn)
         path_2 = self.scratch.refinenet2(path_3, layer_2_rn)
         path_1 = self.scratch.refinenet1(path_2, layer_1_rn)
 
-        print('===paht===')
-        print(path_4.shape)
-        print(path_3.shape)
-        print(path_2.shape)
-        print(path_1.shape)
+        # print('===paht===')
+        # print(path_4.shape)
+        # print(path_3.shape)
+        # print(path_2.shape)
+        # print(path_1.shape)
         
         out = self.scratch.output_conv(path_1)
 
@@ -136,7 +226,7 @@ class MyDepthModel(MyNet):
             self.load(path)
 
     def forward(self, x):
-        inv_depth = super().forward(x).squeeze(dim=1)  # 删除通道
+        inv_depth = super().forward(x)  # 删除通道
 
         if self.invert:
             depth = self.scale * inv_depth + self.shift
@@ -166,35 +256,35 @@ class MyDepthModel(MyNet):
     #     return m
 
 
-if __name__ == '__main__':
-    import time
-    import cv2
-    from util.io import *
+# if __name__ == '__main__':
+#     import time
+#     import cv2
+#     from util.io import *
 
-    input = torch.randn(1, 3, 224, 224)
-    img = read_image('../input/1.jpg')
-    print('origin size' + str(img.shape))
+#     input = torch.randn(1, 3, 224, 224)
+#     img = read_image('../input/rgb_00000.jpg')
+#     print('origin size' + str(img.shape))
 
-    #! 调整图片的大小
-    img = resize_image(img)
-    # img = torch.from_numpy(img).unsqueeze(dim=0).float()
-    # img = rearrange(img, 'b h w c -> b c h w')
-    print('resize to ' + str(img.shape))
+#     #! 调整图片的大小
+#     img = resize_image(img)
+#     # img = torch.from_numpy(img).unsqueeze(dim=0).float()
+#     # img = rearrange(img, 'b h w c -> b c h w')
+#     print('resize to ' + str(img.shape))
 
-    model = MyDepthModel()
-    model.eval()
-    # device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
-    # input = input.cuda()
-    # model.to(device)
+#     model = MyDepthModel()
+#     model.eval()
+#     # device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
+#     # input = input.cuda()
+#     # model.to(device)
 
-    start = time.time()
-    output = model(img)
-    end = time.time()
+#     start = time.time()
+#     output = model(img)
+#     end = time.time()
 
-    total = end - start
+#     total = end - start
 
-    print('output shape: ' + str(output.shape))
+#     print('output shape: ' + str(output.shape))
 
-    write_depth('../output/output', output, bits=1)
+#     write_depth('../output/rgb_00000', output, bits=1)
 
-    print('Runing time {:.5f} s'.format(total))
+#     print('Runing time {:.5f} s'.format(total))

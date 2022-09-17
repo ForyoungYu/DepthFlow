@@ -6,9 +6,20 @@ from io import BytesIO
 import matplotlib.cm
 import numpy as np
 import torch
-import torch.nn as nn
 from PIL import Image
+import requests
 
+
+def send_massage(token, title, name, msg:dict):
+    content = "Epoch: {} Abs Rel.: {}".format(msg['epoch'], msg['abs_rel'])
+    resp = requests.post("https://www.autodl.com/api/v1/wechat/message/push",
+                        json={
+                            "token": token,
+                            "title": title,
+                            "name": name,
+                            "content": content
+                        })
+    # print(resp.content.decode())
 
 class RunningAverage:
     def __init__(self):
@@ -138,94 +149,3 @@ class PointCloudHelper():
         return np.dstack((self.xx * z, self.yy * z, z)).reshape((length, 3))
 
 #####################################################################################################
-
-def _make_scratch(in_shape, out_shape, groups=1, expand=False):
-    """
-    不改变map的形状, 只改变通道数
-    """
-    scratch = nn.Module()
-
-    out_shape1 = out_shape
-    out_shape2 = out_shape
-    out_shape3 = out_shape
-    out_shape4 = out_shape
-    if expand == True:
-        out_shape1 = out_shape
-        out_shape2 = out_shape * 2
-        out_shape3 = out_shape * 4
-        out_shape4 = out_shape * 8
-
-    scratch.layer1_rn = nn.Conv2d(
-        in_shape[0],
-        out_shape1,
-        kernel_size=3,
-        stride=1,
-        padding=1,
-        bias=False,
-        groups=groups,
-    )
-    scratch.layer2_rn = nn.Conv2d(
-        in_shape[1],
-        out_shape2,
-        kernel_size=3,
-        stride=1,
-        padding=1,
-        bias=False,
-        groups=groups,
-    )
-    scratch.layer3_rn = nn.Conv2d(
-        in_shape[2],
-        out_shape3,
-        kernel_size=3,
-        stride=1,
-        padding=1,
-        bias=False,
-        groups=groups,
-    )
-    scratch.layer4_rn = nn.Conv2d(
-        in_shape[3],
-        out_shape4,
-        kernel_size=3,
-        stride=1,
-        padding=1,
-        bias=False,
-        groups=groups,
-    )
-
-    return scratch
-
-class Interpolate(nn.Module):
-    """Interpolation module."""
-
-    def __init__(self, scale_factor, mode, align_corners=False):
-        """Init.
-
-        Args:
-            scale_factor (float): scaling
-            mode (str): interpolation mode
-        """
-        super(Interpolate, self).__init__()
-
-        self.interp = nn.functional.interpolate
-        self.scale_factor = scale_factor
-        self.mode = mode
-        self.align_corners = align_corners
-
-    def forward(self, x):
-        """Forward pass.
-
-        Args:
-            x (tensor): input
-
-        Returns:
-            tensor: interpolated data
-        """
-
-        x = self.interp(
-            x,
-            scale_factor=self.scale_factor,
-            mode=self.mode,
-            align_corners=self.align_corners,
-        )
-
-        return x
