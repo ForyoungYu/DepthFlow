@@ -1,26 +1,40 @@
-import cv2
-import torch
 import time
+import os
+
+import cv2
 import numpy as np
+import torch
+import torchvision.transforms as transforms
 
-# model_type = "DPT_Large"     # MiDaS v3 - Large     (highest accuracy, slowest inference speed)
-# model_type = "DPT_Hybrid"   # MiDaS v3 - Hybrid    (medium accuracy, medium inference speed)
-model_type = "MiDaS_small"  # MiDaS v2.1 - Small   (lowest accuracy, highest inference speed)
+from models.EFT import MyDepthModel
 
-midas = torch.hub.load("intel-isl/MiDaS", model_type)
 
+SHOW_WINDOW = True
 device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
-midas.to(device)
-midas.eval()
+# device = torch.device('cpu')  # Force use CPU
+print('Device: {}'.format(device))
 
-midas_transforms = torch.hub.load("intel-isl/MiDaS", "transforms")
+# Init model
+model = MyDepthModel()
 
-if model_type == "DPT_Large" or model_type == "DPT_Hybrid":
-    transform = midas_transforms.dpt_transform
-else:
-    transform = midas_transforms.small_transform
+# Load pretrained model
+c1 = 'checkpoints/MyNet_17-Sep_18-40-nodebs8-tep10-lr0.000357-wd0.1-56a1755a-892d-4e71-bdf2-258acfd41e5f_best.pt'  # bad
+c2 = 'checkpoints/MyNet_19-Sep_16-45-nodebs10-tep25-lr0.000357-wd0.1-d99d94d7-bbf5-4ac9-a5ef-209eae0d4325_best.pt'  # good
+c3 = 'checkpoints/MyNet_19-Sep_21-00-nodebs10-tep25-lr0.000357-wd0.1-5979b5a3-c5a9-4558-a8af-1d91700b54fe_best.pt'  # bad, all black
+model.load_state_dict(torch.load(c3), strict=False)
+model.to(device)
+model.eval()
 
-cap = cv2.VideoCapture(2)
+# Transform frames
+def transform(img):
+    print(img.shape)
+    img_resize=cv2.resize(img,(500,500))
+    transf = transforms.ToTensor()
+    img_tensor = transf(img_resize)  # (cxhxw)
+    return img_tensor.unsqueeze(0)  # (bxcxhxw)
+
+video_file = 'video.flv'
+cap = cv2.VideoCapture(0)
 
 while cap.isOpened():
     success, img = cap.read()
@@ -31,10 +45,13 @@ while cap.isOpened():
 
     # Apply input transforms
     input_batch = transform(img).to(device)
-
+    
     # Prediction and resize to original resolution
     with torch.no_grad():
-        prediction = midas(input_batch)
+        prediction = model(input_batch)
+        
+        # Delete last dim if it exist
+        prediction = prediction.squeeze(0)
 
         prediction = torch.nn.functional.interpolate(
             prediction.unsqueeze(1),
@@ -56,18 +73,26 @@ while cap.isOpened():
     totalTime = end - start
 
     fps = 1 / totalTime
+    print("Fps: %.2f" % fps)
 
     img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
 
     depth_map = (depth_map * 255).astype(np.uint8)
-    depth_map = cv2.applyColorMap(depth_map, cv2.COLOR_MAGMA)
+    depth_map = cv2.applyColorMap(depth_map, cv2.COLORMAP_MAGMA)  # Color mode
 
-    cv2.putText(img, f'FPS: {int(fps)}', (20, 70), cv2.FONT_HERSHEY_SMPLEX,
-                1.5, (0, 255, 0), 2)
-    cv2.imshow('Image', img)
-    cv2.imshow('Depth Map', depth_map)
+    if SHOW_WINDOW:
+        cv2.putText(img, f'FPS: %.2f' % fps, (20, 70), cv2.FONT_HERSHEY_SIMPLEX,
+                    1.5, (0, 255, 0), 2)
+        cv2.imshow('Image', img)
+        cv2.imshow('Depth Map', depth_map)
 
-    if cv2.waitKey(5) & 0xFF == 27:
-        break
+        if cv2.waitKey(5) & 0xFF == ord('q'):
+            break
+    elif not os.path.exists('output'):
+        os.mkdir('output')
+        output_folder = 'output'
+        file_name = 'output.jpg'
+    path = os.path.join(output_folder, file_name)
+    cv2.imwrite(path, depth_map)
 
 cap.release()
