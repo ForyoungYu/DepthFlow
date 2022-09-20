@@ -4,5 +4,6 @@ __pycache__
 wandb
 dataset
 checkpoints
+weights
 
 test.py

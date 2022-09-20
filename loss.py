@@ -10,6 +10,7 @@ class SILogLoss(nn.Module):  # Main loss function used in AdaBins paper
         self.name = 'SILog'
 
     def forward(self, input, target, mask=None, interpolate=True):
+        o = 1e-8
         # n, c, h, w = target.shape
         if interpolate:
             input = nn.functional.interpolate(input, target.shape[-2:], mode='bilinear', align_corners=True)
@@ -17,17 +18,11 @@ class SILogLoss(nn.Module):  # Main loss function used in AdaBins paper
         if mask is not None:  # 对mask为True的值进行保留，并转换成一维数据
             input = input[mask]
             target = target[mask]
-        # print("input: {}".format(input))
-        # print("target: {}".format(target))
-        
-        # g = torch.log(input) - torch.log(target)
-        g = input - target
-        # print("g: {}".format(g))
+        g = torch.log(input + o) - torch.log(target + o)
         # n, c, h, w = g.shape
         # norm = 1/(h*w)  # 1/T
-        # Dg = norm * torch.sum(g**2) - (0.85/(norm**2)) * (torch.sum(g))**2
-
-        Dg = torch.var(g) + 0.15 * torch.pow(torch.mean(g), 2)
+        # Dg = norm * torch.sum(g**2) - (0.85*(norm**2)) * (torch.sum(g))**2  # Dg >=0
+        Dg = torch.var(g) + 0.15 * torch.pow(torch.mean(g), 2)  # Dg >= 0
         # print("Dg: {}".format(Dg))
         return 10 * torch.sqrt(Dg)
 

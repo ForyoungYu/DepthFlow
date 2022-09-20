@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
+# from einops import rearrange
 
-from einops import rearrange
 from .backbone.efficientformer import EfficientFormer
 from .head.DPTHead import FeatureFusionBlock_custom
 
@@ -18,6 +18,7 @@ EfficientFormer_depth = {
     'l3': [4, 4, 12, 6],
     'l7': [6, 6, 18, 8],
 }
+
 
 def _make_scratch(in_shape, out_shape, groups=1, expand=False):
     """
@@ -74,6 +75,18 @@ def _make_scratch(in_shape, out_shape, groups=1, expand=False):
 
     return scratch
 
+
+def _make_fusion_block(features, use_bn):
+    return FeatureFusionBlock_custom(
+        features,
+        nn.ReLU(False),
+        deconv=False,
+        bn=use_bn,
+        expand=False,
+        align_corners=True,
+    )
+
+
 class Interpolate(nn.Module):
     """Interpolation module."""
 
@@ -110,55 +123,52 @@ class Interpolate(nn.Module):
 
         return x
 
-def _make_fusion_block(features, use_bn):
-    return FeatureFusionBlock_custom(
-        features,
-        nn.ReLU(False),
-        deconv=False,
-        bn=use_bn,
-        expand=False,
-        align_corners=True,
-    )
 
 class efficientformer_l1_feat(EfficientFormer):
+
     def __init__(self, **kwargs):
-        super().__init__(
-            layers=EfficientFormer_depth['l1'],
-            embed_dims=EfficientFormer_width['l1'],
-            downsamples=[True, True, True, True],
-            fork_feat=True,
-            vit_num=1,
-            **kwargs)
+        super().__init__(layers=EfficientFormer_depth['l1'],
+                         embed_dims=EfficientFormer_width['l1'],
+                         downsamples=[True, True, True, True],
+                         fork_feat=True,
+                         vit_num=1,
+                         **kwargs)
 
 
 class efficientformer_l3_feat(EfficientFormer):
+
     def __init__(self, **kwargs):
-        super().__init__(
-            layers=EfficientFormer_depth['l3'],
-            embed_dims=EfficientFormer_width['l3'],
-            downsamples=[True, True, True, True],
-            fork_feat=True,
-            vit_num=4,
-            **kwargs)
+        super().__init__(layers=EfficientFormer_depth['l3'],
+                         embed_dims=EfficientFormer_width['l3'],
+                         downsamples=[True, True, True, True],
+                         fork_feat=True,
+                         vit_num=4,
+                         **kwargs)
+
 
 class efficientformer_l7_feat(EfficientFormer):
+
     def __init__(self, **kwargs):
-        super().__init__(
-            layers=EfficientFormer_depth['l7'],
-            embed_dims=EfficientFormer_width['l7'],
-            downsamples=[True, True, True, True],
-            layer_scale_init_value=1e-6,
-            fork_feat=True,
-            vit_num=8,
-            **kwargs)
+        super().__init__(layers=EfficientFormer_depth['l7'],
+                         embed_dims=EfficientFormer_width['l7'],
+                         downsamples=[True, True, True, True],
+                         layer_scale_init_value=1e-6,
+                         fork_feat=True,
+                         vit_num=8,
+                         **kwargs)
+
 
 # My Code
-class MyNet(nn.Module):
+class EFT(nn.Module):
+
     def __init__(self, head, features=256, use_bn=True):
         super().__init__()
 
         # backbone
         self.backbone = efficientformer_l1_feat()
+        # weights = 'weights/efficientformer_l1_300d.pth'
+        # checkpoint = torch.load(weights, map_location='cpu')
+        # self.backbone.load_state_dict(checkpoint['model'],  strict=False)
 
         # neck
         #? scratch是个什么神奇的东西
@@ -178,7 +188,7 @@ class MyNet(nn.Module):
         layer_2_rn = self.scratch.layer2_rn(out[1])
         layer_3_rn = self.scratch.layer3_rn(out[2])
         layer_4_rn = self.scratch.layer4_rn(out[3])
-        
+
         # print('===layer===')
         # print(layer_1_rn.shape)
         # print(layer_2_rn.shape)
@@ -195,15 +205,21 @@ class MyNet(nn.Module):
         # print(path_3.shape)
         # print(path_2.shape)
         # print(path_1.shape)
-        
+
         out = self.scratch.output_conv(path_1)
 
         return out
 
 
-class MyDepthModel(MyNet):
-    def __init__(
-        self, path=None, non_negative=True, scale=1.0, shift=0.0, invert=False, **kwargs):
+class MyDepthModel(EFT):
+
+    def __init__(self,
+                 path=None,
+                 non_negative=True,
+                 scale=1.0,
+                 shift=0.0,
+                 invert=False,
+                 **kwargs):
         features = kwargs["features"] if "features" in kwargs else 256
 
         self.scale = scale
@@ -211,7 +227,11 @@ class MyDepthModel(MyNet):
         self.invert = invert  # 反转深度
 
         head = nn.Sequential(
-            nn.Conv2d(features, features // 2, kernel_size=3, stride=1, padding=1),
+            nn.Conv2d(features,
+                      features // 2,
+                      kernel_size=3,
+                      stride=1,
+                      padding=1),
             Interpolate(scale_factor=2, mode="bilinear", align_corners=True),
             nn.Conv2d(features // 2, 32, kernel_size=3, stride=1, padding=1),
             nn.ReLU(True),
@@ -222,6 +242,7 @@ class MyDepthModel(MyNet):
 
         super().__init__(head, **kwargs)
 
+        # self.weight_init()
         if path is not None:
             self.load(path)
 
@@ -236,29 +257,44 @@ class MyDepthModel(MyNet):
         else:
             return inv_depth
 
+    # def weight_init(m):
+    #     if isinstance(m, nn.Linear):
+    #         nn.init.xavier_normal_(m.weight)
+    #         nn.init.constant_(m.bias, 0)
+    #     # 也可以判断是否为conv2d，使用相应的初始化方式
+    #     elif isinstance(m, nn.Conv2d):
+    #         nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
+    #         # 是否为批归一化层
+    #     elif isinstance(m, nn.BatchNorm2d):
+    #         nn.init.constant_(m.weight, 1)
+    #         nn.init.constant_(m.bias, 0)
+
+    # def get_1x_lr_params(self,):  # lr/10 learning rate
+    #     return self.backbone.parameters()
+
+    # def get_10x_lr_params(self):  # lr learning rate
+    #     modules = [self.backbone, self.scratch]
+    #     for m in modules:
+    #         yield from m.parameters()
+
     # @classmethod
-    # def build(cls, n_bins, **kwargs):
-    #     basemodel_name = 'tf_efficientnet_b5_ap'
+    # def build(cls, args, **kwargs):
+    #     # basemodel_name = 'tf_efficientnet_b5_ap'
+    #     weights = 'weights/efficientformer_l1_300d.pth'
 
-    #     print('Loading base model ()...'.format(basemodel_name), end='')
-    #     basemodel = torch.hub.load('rwightman/gen-efficientnet-pytorch', basemodel_name, pretrained=True)
+    #     model = cls()
+    #     checkpoint = torch.hub.load(weights, pretrained=True)
+    #     model.load_state_dict(checkpoint['model'])
     #     print('Done.')
 
-    #     # Remove last layer
-    #     print('Removing last two layers (global_pool & classifier).')
-    #     basemodel.global_pool = nn.Identity()
-    #     basemodel.classifier = nn.Identity()
-
-    #     # Building Encoder-Decoder model
-    #     print('Building Encoder-Decoder model..', end='')
-    #     m = cls(basemodel, n_bins=n_bins, **kwargs)
-    #     print('Done.')
-    #     return m
+    #     return model
 
 
 # if __name__ == '__main__':
 #     import time
+
 #     import cv2
+
 #     from util.io import *
 
 #     input = torch.randn(1, 3, 224, 224)

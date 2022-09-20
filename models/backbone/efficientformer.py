@@ -410,52 +410,45 @@ class EfficientFormer(nn.Module):
                     embed_dims[-1], num_classes) if num_classes > 0 \
                     else nn.Identity()
 
-        self.apply(self.cls_init_weights)
+        self.apply(self.depth_init_weights)
 
-        self.init_cfg = copy.deepcopy(init_cfg)
+        # self.init_cfg = copy.deepcopy(init_cfg)
         # load pre-trained model
-        if self.fork_feat and (
-                self.init_cfg is not None or pretrained is not None):
-            self.init_weights()
+        # if self.fork_feat and (
+        #         self.init_cfg is not None or pretrained is not None):
+        # if self.fork_feat:
+            # self.init_weights()
 
     # init for classification
     def cls_init_weights(self, m):
         if isinstance(m, nn.Linear):
-            trunc_normal_(m.weight, std=.02)
+            trunc_normal_(m.weight, std=.02)  # 截断正态分布
             if isinstance(m, nn.Linear) and m.bias is not None:
                 nn.init.constant_(m.bias, 0)
 
+    # init for depth estimation
+    def depth_init_weights(self, m):
+        if isinstance(m, nn.Linear):
+            trunc_normal_(m.weight, std=.02)  # 截断正态分布
+            if isinstance(m, nn.Linear) and m.bias is not None:
+                nn.init.constant_(m.bias, 0)
+            # nn.init.xavier_normal_(m.weight)
+            # nn.init.constant_(m.bias, 0)
+        # 也可以判断是否为conv2d，使用相应的初始化方式 
+        elif isinstance(m, nn.Conv2d):
+            nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
+        # 是否为批归一化层
+        elif isinstance(m, nn.BatchNorm2d):
+            nn.init.constant_(m.weight, 1)
+            nn.init.constant_(m.bias, 0)
+
     # init for mmdetection or mmsegmentation by loading
     # imagenet pre-trained weights
-    def init_weights(self, pretrained=None):
-        logger = get_root_logger()
-        if self.init_cfg is None and pretrained is None:
-            logger.warn(f'No pre-trained weights for '
-                        f'{self.__class__.__name__}, '
-                        f'training start from scratch')
-            pass
-        else:
-            assert 'checkpoint' in self.init_cfg, f'Only support ' \
-                                                  f'specify `Pretrained` in ' \
-                                                  f'`init_cfg` in ' \
-                                                  f'{self.__class__.__name__} '
-            if self.init_cfg is not None:
-                ckpt_path = self.init_cfg['checkpoint']
-            elif pretrained is not None:
-                ckpt_path = pretrained
-
-            ckpt = _load_checkpoint(
-                ckpt_path, logger=logger, map_location='cpu')
-            if 'state_dict' in ckpt:
-                _state_dict = ckpt['state_dict']
-            elif 'model' in ckpt:
-                _state_dict = ckpt['model']
-            else:
-                _state_dict = ckpt
-
-            state_dict = _state_dict
-            missing_keys, unexpected_keys = \
-                self.load_state_dict(state_dict, False)
+    def init_weights(self):
+        print("Init Pre-trained Weights")
+        weight_path = 'weights/efficientformer_l1_300d.pth'
+        checkpoint = torch.load(weight_path)
+        self.load_state_dict(checkpoint, False)
 
     def get_classifier(self): #
         return self.head

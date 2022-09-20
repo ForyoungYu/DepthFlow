@@ -76,7 +76,7 @@ def colorize(value, vmin=10, vmax=1000, cmap='magma_r'):
     value[invalid_mask] = 255
     img = value[:, :, :3]
 
-    #     return img.transpose((2, 0, 1))
+        # return img.transpose((2, 0, 1))
     return img
 
 

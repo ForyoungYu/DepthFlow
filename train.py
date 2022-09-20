@@ -13,6 +13,7 @@ import torch.optim as optim
 import torch.utils.data.distributed
 import wandb
 from tqdm import tqdm
+# from einops import rearrange
 
 import model_io
 import models
@@ -43,20 +44,19 @@ def colorize(value, vmin=10, vmax=1000, cmap='plasma'):
         # Avoid 0-division
         value = value * 0.
     # squeeze last dim if it exists
-    # value = value.squeeze(axis=0)
+    value = value.squeeze(axis=0)  # (hxw)
 
     cmapper = matplotlib.cm.get_cmap(cmap)
-    value = cmapper(value, bytes=True)  # (nxmx4)
+    value = cmapper(value.detach().cpu().numpy(), bytes=True)  # (hxwx4)
+    # value = rearrange(value, 'b h w c -> b c h w')  # (4xhxw)
+    img = value[:, :, :3]  # (hxwx3)
 
-    img = value[:, :, :3]
-
-    #     return img.transpose((2, 0, 1))
     return img
 
 
 def log_images(img, depth, pred, args, step):
-    depth = colorize(depth, vmin=args.min_depth, vmax=args.max_depth)
-    pred = colorize(pred, vmin=args.min_depth, vmax=args.max_depth)
+    depth = colorize(depth[0], vmin=args.min_depth, vmax=args.max_depth)
+    pred = colorize(pred[0], vmin=args.min_depth, vmax=args.max_depth)
     wandb.log(
         {
             "Input": [wandb.Image(img)],
@@ -69,10 +69,6 @@ def main_worker(gpu, ngpus_per_node, args):
     args.gpu = gpu
 
     ###################################### Load model ##############################################
-
-    # model = models.mynet.build(n_bins=args.n_bins, min_val=args.min_depth, max_val=args.max_depth,
-    #                                       norm=args.norm)
-
     model = models.MyDepthModel()
     ################################################################################################
 
@@ -118,7 +114,7 @@ def train(model, args, epochs=10, experiment_name="DeepLab", lr=0.0001, root="."
     ###################################### Logging setup #########################################
     print(f"Training {experiment_name}")
 
-    run_id = f"{dt.now().strftime('%d-%h_%H:%M')}-nodebs{args.bs}-tep{epochs}-lr{lr}-wd{args.wd}-{uuid.uuid4()}"
+    run_id = f"{dt.now().strftime('%d-%h_%H-%M')}-nodebs{args.bs}-tep{epochs}-lr{lr}-wd{args.wd}-{uuid.uuid4()}"
     name = f"{experiment_name}_{run_id}"
     should_write = ((not args.distributed) or args.rank == 0)
     should_log = should_write and logging
@@ -127,15 +123,13 @@ def train(model, args, epochs=10, experiment_name="DeepLab", lr=0.0001, root="."
         if args.dataset != 'nyu':
             PROJECT = PROJECT + f"-{args.dataset}"
         wandb.init(project=PROJECT, name=name, config=args, dir=args.root, tags=tags, notes=args.notes)
-        # wandb.watch(model)
+        wandb.watch(model)
     ################################################################################################
 
     train_loader = DepthDataLoader(args, 'train').data
     test_loader = DepthDataLoader(args, 'online_eval').data
 
     ###################################### losses ##############################################
-    # criterion_ueff = SILogLoss()
-    # criterion_bins = BinsChamferLoss() if args.chamfer else None
     silog_loss = SILogLoss()
     ################################################################################################
 
@@ -167,8 +161,9 @@ def train(model, args, epochs=10, experiment_name="DeepLab", lr=0.0001, root="."
                                               base_momentum=0.85, max_momentum=0.95, last_epoch=args.last_epoch,
                                               div_factor=args.div_factor,
                                               final_div_factor=args.final_div_factor)
-    if args.resume != '' and scheduler is not None:
-        scheduler.step(args.epoch + 1)
+    if args.resume != '' and scheduler is not None:  # 从检查点导入数据
+        model, optimizer, epoch = model_io.load_checkpoint(args.resume, model, optimizer)
+        # scheduler.step(args.epoch + 1)
     ################################################################################################
 
     # max_iter = len(train_loader) * epochs
@@ -188,23 +183,15 @@ def train(model, args, epochs=10, experiment_name="DeepLab", lr=0.0001, root="."
                     continue
 
             pred = model(img)  # 将数据输入模型中  shape: B, 1, H, W
-            # print("Pred: {}".format(pred[0, :, :, :]))
-            # print("Depth: {}".format(depth[0, :, :, :]))
+
             mask = depth > args.min_depth
             train_loss = silog_loss(pred, depth, mask=mask.to(torch.bool), interpolate=True)
-            # print("Loss: {}".format(train_loss))
-            # if args.w_chamfer > 0:  # 损失函数的bate值
-            #     l_chamfer = criterion_bins(bin_edges, depth)
-            # else:
-            #     l_chamfer = torch.Tensor([0]).to(img.device)
-
-            # loss = l_dense + args.w_chamfer * l_chamfer 
+            
             train_loss.backward()  # 损失的后向传播，计算梯度
             nn.utils.clip_grad_norm_(model.parameters(), 0.1)  # 可选，用于梯度剪裁
             optimizer.step()  # 使用梯度进行优化
             if should_log and step % 5 == 0:
                 wandb.log({f"Train/{silog_loss.name}": train_loss.item()}, step=step)
-                # wandb.log({f"Train/{criterion_bins.name}": l_chamfer.item()}, step=step)
 
             step += 1
             scheduler.step()  # 调整LR
@@ -218,11 +205,10 @@ def train(model, args, epochs=10, experiment_name="DeepLab", lr=0.0001, root="."
                 metrics, val_si = validate(args, model, test_loader, silog_loss, epoch, epochs, device)
                 
                 # Print Metrics
-                print("Validated: {}".format(metrics))
+                # print("Validated: {}".format(metrics))
                 if should_log:
                     wandb.log({
                         f"Test/{silog_loss.name}": val_si.get_value(),
-                        # f"Test/{criterion_bins.name}": val_bins.get_value()
                     }, step=step)
 
                     wandb.log({f"Metrics/{k}": v for k, v in metrics.items()}, step=step)
@@ -240,9 +226,9 @@ def train(model, args, epochs=10, experiment_name="DeepLab", lr=0.0001, root="."
         
         # Send Message to WeChat
         message = dict(epoch=epoch, a1=metrics['a1'], a2=metrics['a2'], a3=metrics['a3'], 
-                       abs_rel=metrics['abs_rel'],rmse=metrics['rmse'], log_10=metrics['log_10'],
-                       rmse_log=metrics['rmse_log'],silog=metrics['silog'], sq_rel=metrics['sq_rel'])
-        send_massage(token,PROJECT, "Hello", msg=message)
+                    abs_rel=metrics['abs_rel'],rmse=metrics['rmse'], log_10=metrics['log_10'],
+                    rmse_log=metrics['rmse_log'],silog=metrics['silog'], sq_rel=metrics['sq_rel'])
+        send_massage(token,PROJECT, "RTX A4000", msg=message)
     
 
     return model
@@ -251,7 +237,6 @@ def train(model, args, epochs=10, experiment_name="DeepLab", lr=0.0001, root="."
 def validate(args, model, test_loader, loss_function, epoch, epochs, device='cpu'):
     with torch.no_grad():
         val_si = RunningAverage()
-        # val_bins = RunningAverage()
         metrics = utils.RunningAverageDict()
         for batch in tqdm(test_loader, desc=f"Epoch: {epoch + 1}/{epochs}. Loop: Validation") if is_rank_zero(
                 args) else test_loader:
