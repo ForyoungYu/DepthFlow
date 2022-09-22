@@ -459,7 +459,7 @@ class EfficientFormer(nn.Module):
             self.embed_dim, num_classes) if num_classes > 0 else nn.Identity()
 
     def forward_tokens(self, x):
-        outs = []
+        outs = []  # each stage output
         B = 0
         C = 0
         H = 0
