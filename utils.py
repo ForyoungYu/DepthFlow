@@ -57,23 +57,33 @@ class RunningAverageDict:
         return {key: value.get_value() for key, value in self._dict.items()}
 
 
-def colorize(value, vmin=10, vmax=1000, cmap='magma_r'):
-    value = value.cpu().numpy()[0, :, :]
-    invalid_mask = value == -1
+def colorize(value, vmin=10, vmax=1000, invert=False, cmap='magma_r'):
+    value = value.detach().cpu().numpy()[0, :, :]
+    # invalid_mask = value == -1
 
     # normalize
     vmin = value.min() if vmin is None else vmin
     vmax = value.max() if vmax is None else vmax
-    if vmin != vmax:
-        value = (value - vmin) / (vmax - vmin)  # vmin..vmax
+    if invert and vmin !=vmax:
+        value = (vmax - value) / (vmax - vmin)
+        print("invert!")
+    elif not invert and vmin != vmax:
+        value = (value - vmin) / (vmax - vmin)
+        print("not invert")
     else:
         # Avoid 0-division
         value = value * 0.
+
+    # if vmin != vmax:
+    #     value = (value - vmin) / (vmax - vmin)  # vmin..vmax
+    # else:
+    #     # Avoid 0-division
+    #     value = value * 0.
     # squeeze last dim if it exists
-    # value = value.squeeze(axis=0)
+    value = value.squeeze(axis=0)
     cmapper = matplotlib.cm.get_cmap(cmap)
     value = cmapper(value, bytes=True)  # (nxmx4)
-    value[invalid_mask] = 255
+    # value[invalid_mask] = 255
     img = value[:, :, :3]
 
         # return img.transpose((2, 0, 1))

@@ -181,6 +181,7 @@ class DataLoadPreprocess(Dataset):
         return result
 
     def random_crop(self, img, depth, height, width):
+        # 随机剪裁
         assert img.shape[0] >= height
         assert img.shape[1] >= width
         assert img.shape[0] == depth.shape[0]
@@ -192,7 +193,7 @@ class DataLoadPreprocess(Dataset):
         return img, depth
 
     def train_preprocess(self, image, depth_gt):
-        # Random flipping
+        # Random flipping 随机翻转
         do_flip = random.random()
         if do_flip > 0.5:
             image = (image[:, ::-1, :]).copy()

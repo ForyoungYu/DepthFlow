@@ -12,21 +12,22 @@ import torch.nn as nn
 import torch.optim as optim
 import torch.utils.data.distributed
 import wandb
+from thop import profile
 from tqdm import tqdm
 # from einops import rearrange
 
 import model_io
-import models
+from models.EFT import EFT
 import utils
 from dataloader import DepthDataLoader
-from loss import SILogLoss, BinsChamferLoss
+from loss import SILogLoss
 from utils import RunningAverage, colorize, send_massage
 
 # os.environ['WANDB_MODE'] = 'dryrun'
 PROJECT = "depthflow"
 logging = True
 token = "c9749a54b69e"
-
+global epoch
 def is_rank_zero(args):
     return args.rank == 0
 
@@ -34,29 +35,37 @@ def is_rank_zero(args):
 import matplotlib
 
 
-def colorize(value, vmin=10, vmax=1000, cmap='plasma'):
-    # normalize
-    vmin = value.min() if vmin is None else vmin
-    vmax = value.max() if vmax is None else vmax
-    if vmin != vmax:
-        value = (value - vmin) / (vmax - vmin)  # vmin..vmax
-    else:
-        # Avoid 0-division
-        value = value * 0.
-    # squeeze last dim if it exists
-    value = value.squeeze(axis=0)  # (hxw)
+# def colorize(value, vmin=10, vmax=1000, invert=False, cmap='plasma'):
+#     # normalize
+#     vmin = value.min() if vmin is None else vmin
+#     vmax = value.max() if vmax is None else vmax
+#     if invert and vmin !=vmax:
+#         value = (vmax - value) / (vmax - vmin)
+#     elif not invert and vmin != vmax:
+#         value = (value - vmin) / (vmax - vmin)
+#     else:
+#         # Avoid 0-division
+#         value = value * 0.
+        
+#     # if vmin != vmax:
+#     #     value = (value - vmin) / (vmax - vmin)  # vmin..vmax
+#     # else:
+#     #     # Avoid 0-division
+#     #     value = value * 0.
+#     # squeeze last dim if it exists
+#     value = value.squeeze(axis=0)  # (hxw)
 
-    cmapper = matplotlib.cm.get_cmap(cmap)
-    value = cmapper(value.detach().cpu().numpy(), bytes=True)  # (hxwx4)
-    # value = rearrange(value, 'b h w c -> b c h w')  # (4xhxw)
-    img = value[:, :, :3]  # (hxwx3)
+#     cmapper = matplotlib.cm.get_cmap(cmap)
+#     value = cmapper(value.detach().cpu().numpy(), bytes=True)  # (hxwx4)
+#     # value = rearrange(value, 'b h w c -> b c h w')  # (4xhxw)
+#     img = value[:, :, :3]  # (hxwx3)
 
-    return img
+#     return img
 
 
 def log_images(img, depth, pred, args, step):
-    depth = colorize(depth[0], vmin=args.min_depth, vmax=args.max_depth)
-    pred = colorize(pred[0], vmin=args.min_depth, vmax=args.max_depth)
+    depth = colorize(depth, vmin=args.min_depth, vmax=args.max_depth, invert=True)
+    pred = colorize(pred, vmin=args.min_depth, vmax=args.max_depth, invert=True)
     wandb.log(
         {
             "Input": [wandb.Image(img)],
@@ -64,13 +73,24 @@ def log_images(img, depth, pred, args, step):
             "Prediction": [wandb.Image(pred)]
         }, step=step)
 
+# 计算模型的FLOPs和Params
+def FLOPs_and_Patams(model, hw):
+    dummy_input = torch.randn(1, 3, hw, hw)
+    flops, params = profile(model, (dummy_input,))
+    # print('flops: ', flops, 'params: ', params)
+    print('flops: %.2f M, params: %.2f M' % (flops / 1000000.0, params / 1000000.0))
+    
+    # total = sum([param.nelement() for param in model.parameters()])
+    # print("Number of parameter: %.2fM" % (total/1e6))
+
 
 def main_worker(gpu, ngpus_per_node, args):
     args.gpu = gpu
 
     ###################################### Load model ##############################################
-    model = models.MyDepthModel()
+    model = EFT(model='l3')
     ################################################################################################
+    # FLOPs_and_Patams(model, 224)
 
     if args.gpu is not None:  # If a gpu is set by user: NO PARALLELISM!!
         torch.cuda.set_device(args.gpu)
@@ -228,7 +248,7 @@ def train(model, args, epochs=10, experiment_name="DeepLab", lr=0.0001, root="."
         message = dict(epoch=epoch, a1=metrics['a1'], a2=metrics['a2'], a3=metrics['a3'], 
                     abs_rel=metrics['abs_rel'],rmse=metrics['rmse'], log_10=metrics['log_10'],
                     rmse_log=metrics['rmse_log'],silog=metrics['silog'], sq_rel=metrics['sq_rel'])
-        send_massage(token,PROJECT, "RTX A4000", msg=message)
+        send_massage(token, PROJECT, "RTX A4000", message)
     
 
     return model
@@ -337,7 +357,7 @@ if __name__ == '__main__':
     parser.add_argument('--filenames_file',
                         default="./train_test_inputs/nyudepthv2_train_files_with_gt.txt",
                         type=str, help='path to the filenames text file')
-
+    # 用于随机剪裁
     parser.add_argument('--input_height', type=int, help='input height', default=416)
     parser.add_argument('--input_width', type=int, help='input width', default=544)
     parser.add_argument('--max_depth', type=float, help='maximum depth in estimation', default=10)

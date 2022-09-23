@@ -1,3 +1,9 @@
 opencv-python
-torch
+numpy
+matplotlib
+wandb
 timm
+tqdm
+einops
+scipy
+thop
