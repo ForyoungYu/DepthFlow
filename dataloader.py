@@ -96,7 +96,6 @@ class DataLoadPreprocess(Dataset):
 
             image = Image.open(image_path)
             depth_gt = Image.open(depth_path)
-
             if self.args.do_kb_crop is True:
                 height = image.height
                 width = image.width
@@ -124,7 +123,10 @@ class DataLoadPreprocess(Dataset):
             else:
                 depth_gt = depth_gt / 256.0
 
-            image, depth_gt = self.random_crop(image, depth_gt, self.args.input_height, self.args.input_width)
+            if self.args.random_crop_ratio:
+                image, depth_gt = self.random_crop_ratio(image, depth_gt, self.args.random_crop_ratio)
+            else:
+                image, depth_gt = self.random_crop(image, depth_gt, self.args.input_height, self.args.input_width)
             image, depth_gt = self.train_preprocess(image, depth_gt)
             sample = {'image': image, 'depth': depth_gt, 'focal': focal}
 
@@ -177,11 +179,21 @@ class DataLoadPreprocess(Dataset):
         return sample
 
     def rotate_image(self, image, angle, flag=Image.BILINEAR):
+        # Random flipping 随机翻转
         result = image.rotate(angle, resample=flag)
         return result
 
+    def random_crop_ratio(self, img, depth, ratio):
+        assert 0. < ratio <= 1.
+        ratio_h = int(ratio * img.shape[0])
+        ratio_w = int(ratio * img.shape[1])
+        x = random.randint(0, img.shape[1] - ratio_w)
+        y = random.randint(0, img.shape[0] - ratio_h)
+        img = img[y:y + ratio_h, x:x + ratio_w, :]
+        depth = depth[y:y + ratio_h, x:x + ratio_w, :]
+        return img, depth
+
     def random_crop(self, img, depth, height, width):
-        # 随机剪裁
         assert img.shape[0] >= height
         assert img.shape[1] >= width
         assert img.shape[0] == depth.shape[0]
@@ -193,7 +205,6 @@ class DataLoadPreprocess(Dataset):
         return img, depth
 
     def train_preprocess(self, image, depth_gt):
-        # Random flipping 随机翻转
         do_flip = random.random()
         if do_flip > 0.5:
             image = (image[:, ::-1, :]).copy()

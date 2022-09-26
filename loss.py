@@ -13,6 +13,7 @@ class SILogLoss(nn.Module):  # Main loss function used in AdaBins paper
         o = 1e-8
         # n, c, h, w = target.shape
         if interpolate:
+            # interpolate input shape: n, c, h, w
             input = nn.functional.interpolate(input, target.shape[-2:], mode='bilinear', align_corners=True)
 
         if mask is not None:  # 对mask为True的值进行保留，并转换成一维数据

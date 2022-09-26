@@ -1,13 +1,21 @@
 #!/bin/bash
 
+DATAPATH='C:\dataset\nyu\sync'
+EVALPATH='C:\dataset\nyu\official_splits\test'
+
 python train.py \
-    --name 'EFT_l3' \
+    --name 'EFT_l3_nyu' \
     --dataset 'nyu' \
-    --epochs 50 \
+    --epochs 100 \
     --same_lr \
-    --bs 12 \
-    --workers 24 \
-    --resume 'checkpoints/EFT_22-Sep_14-52-nodebs12-tep50-lr0.000357-wd0.1-f3651bc2-1d6e-4e75-b214-59eef4eafcac_latest.pt'
+    --bs 5 \
+    --workers 16 \
+    --data_path $DATAPATH \
+    --gt_path $DATAPATH \
+    --data_path_eval $EVALPATH \
+    --gt_path_eval $EVALPATH \
+    # --random_crop_ratio 0.86 \
+    # --resume ''
     # --lr 0.0001 \
     # --wd 1e-2 \
     # --distributed

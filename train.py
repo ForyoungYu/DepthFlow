@@ -11,23 +11,24 @@ import torch.multiprocessing as mp
 import torch.nn as nn
 import torch.optim as optim
 import torch.utils.data.distributed
-import wandb
 from thop import profile
 from tqdm import tqdm
-# from einops import rearrange
 
 import model_io
-from models.EFT import EFT
 import utils
+import wandb
 from dataloader import DepthDataLoader
 from loss import SILogLoss
+# Models
+from models.EFT import EFT
+from models.midas.midas_net_custom import MidasNet_small
 from utils import RunningAverage, colorize, send_massage
 
 # os.environ['WANDB_MODE'] = 'dryrun'
 PROJECT = "depthflow"
 logging = True
 token = "c9749a54b69e"
-global epoch
+
 def is_rank_zero(args):
     return args.rank == 0
 
@@ -35,42 +36,14 @@ def is_rank_zero(args):
 import matplotlib
 
 
-# def colorize(value, vmin=10, vmax=1000, invert=False, cmap='plasma'):
-#     # normalize
-#     vmin = value.min() if vmin is None else vmin
-#     vmax = value.max() if vmax is None else vmax
-#     if invert and vmin !=vmax:
-#         value = (vmax - value) / (vmax - vmin)
-#     elif not invert and vmin != vmax:
-#         value = (value - vmin) / (vmax - vmin)
-#     else:
-#         # Avoid 0-division
-#         value = value * 0.
-        
-#     # if vmin != vmax:
-#     #     value = (value - vmin) / (vmax - vmin)  # vmin..vmax
-#     # else:
-#     #     # Avoid 0-division
-#     #     value = value * 0.
-#     # squeeze last dim if it exists
-#     value = value.squeeze(axis=0)  # (hxw)
-
-#     cmapper = matplotlib.cm.get_cmap(cmap)
-#     value = cmapper(value.detach().cpu().numpy(), bytes=True)  # (hxwx4)
-#     # value = rearrange(value, 'b h w c -> b c h w')  # (4xhxw)
-#     img = value[:, :, :3]  # (hxwx3)
-
-#     return img
-
-
 def log_images(img, depth, pred, args, step):
     depth = colorize(depth, vmin=args.min_depth, vmax=args.max_depth, invert=True)
     pred = colorize(pred, vmin=args.min_depth, vmax=args.max_depth, invert=True)
     wandb.log(
         {
-            "Input": [wandb.Image(img)],
-            "GT": [wandb.Image(depth)],
-            "Prediction": [wandb.Image(pred)]
+            "_Input": [wandb.Image(img)],
+            "_GT": [wandb.Image(depth)],
+            "_Prediction": [wandb.Image(pred)]
         }, step=step)
 
 # 计算模型的FLOPs和Params
@@ -134,7 +107,8 @@ def train(model, args, epochs=10, experiment_name="DeepLab", lr=0.0001, root="."
     ###################################### Logging setup #########################################
     print(f"Training {experiment_name}")
 
-    run_id = f"{dt.now().strftime('%d-%h_%H-%M')}-nodebs{args.bs}-tep{epochs}-lr{lr}-wd{args.wd}-{uuid.uuid4()}"
+    # run_id = f"{dt.now().strftime('%d-%h_%H-%M')}-nodebs{args.bs}-tep{epochs}-lr{lr}-wd{args.wd}-{uuid.uuid4()}"
+    run_id = f"{dt.now().strftime('%d-%h_%H-%M')}-nodebs{args.bs}-tep{epochs}-lr{lr}-wd{args.wd}"
     name = f"{experiment_name}_{run_id}"
     should_write = ((not args.distributed) or args.rank == 0)
     should_log = should_write and logging
@@ -202,7 +176,7 @@ def train(model, args, epochs=10, experiment_name="DeepLab", lr=0.0001, root="."
                 if not batch['has_valid_depth']:
                     continue
 
-            pred = model(img)  # 将数据输入模型中  shape: B, 1, H, W
+            pred = model(img)  # (bx1xhxw)
 
             mask = depth > args.min_depth
             train_loss = silog_loss(pred, depth, mask=mask.to(torch.bool), interpolate=True)
@@ -248,7 +222,7 @@ def train(model, args, epochs=10, experiment_name="DeepLab", lr=0.0001, root="."
         message = dict(epoch=epoch, a1=metrics['a1'], a2=metrics['a2'], a3=metrics['a3'], 
                     abs_rel=metrics['abs_rel'],rmse=metrics['rmse'], log_10=metrics['log_10'],
                     rmse_log=metrics['rmse_log'],silog=metrics['silog'], sq_rel=metrics['sq_rel'])
-        send_massage(token, PROJECT, "RTX A4000", message)
+        send_massage(token, PROJECT, "#2", message)
     
 
     return model
@@ -362,6 +336,7 @@ if __name__ == '__main__':
     parser.add_argument('--input_width', type=int, help='input width', default=544)
     parser.add_argument('--max_depth', type=float, help='maximum depth in estimation', default=10)
     parser.add_argument('--min_depth', type=float, help='minimum depth in estimation', default=1e-3)
+    parser.add_argument('--random_crop_ratio', type=float, help='random crop ratio', default=None)
 
     parser.add_argument('--do_random_rotate', default=True,
                         help='if set, will perform random rotation for augmentation',

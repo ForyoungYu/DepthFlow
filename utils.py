@@ -66,19 +66,11 @@ def colorize(value, vmin=10, vmax=1000, invert=False, cmap='magma_r'):
     vmax = value.max() if vmax is None else vmax
     if invert and vmin !=vmax:
         value = (vmax - value) / (vmax - vmin)
-        print("invert!")
     elif not invert and vmin != vmax:
         value = (value - vmin) / (vmax - vmin)
-        print("not invert")
     else:
         # Avoid 0-division
         value = value * 0.
-
-    # if vmin != vmax:
-    #     value = (value - vmin) / (vmax - vmin)  # vmin..vmax
-    # else:
-    #     # Avoid 0-division
-    #     value = value * 0.
     # squeeze last dim if it exists
     value = value.squeeze(axis=0)
     cmapper = matplotlib.cm.get_cmap(cmap)

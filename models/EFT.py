@@ -53,6 +53,9 @@ class efficientformer_l7_feat(EfficientFormer):
 
 
 class DSConv(nn.Module):
+    """
+    深度可分离卷积
+    """
     def __init__(self, in_ch, out_ch, groups):
         super(DSConv, self).__init__()
         self.conv = nn.Conv2d(
@@ -152,7 +155,7 @@ class EFT(BaseModel):
         if self.channels_last == True:
             print("self.channels_last = ", self.channels_last)
             x.contiguous(memory_format=torch.channels_last)
-
+        # print(x.shape)  # 4, 3, 302, 1045
         out = self.model(x)
         # print("=== out ===")
         # print(out[0].shape)
@@ -173,45 +176,46 @@ class EFT(BaseModel):
 
         # print('=== pathes ===')
         path_4 = self.scratch.refinenet4(layer_4_rn)
-        # print(path_4.shape)
-        path_3 = self.scratch.refinenet3(path_4, layer_3_rn)  # 512 256
-        # print(path_3.shape)
+        # print("path_4 " + str(path_4.shape))
+        path_3 = self.scratch.refinenet3(path_4, layer_3_rn)
+        # print("path3 " + str(path_3.shape))
         path_2 = self.scratch.refinenet2(path_3, layer_2_rn)
-        # print(path_2.shape)
+        # print("path2 " + str(path_2.shape))
         path_1 = self.scratch.refinenet1(path_2, layer_1_rn)
-        # print(path_1.shape)
+        # print("path1 " + str(path_1.shape))
 
 
         out = self.scratch.output_conv(path_1)
 
+        # return torch.squeeze(out, dim=1)
         return out
 
-if __name__ == '__main__':
-    import time
-    from util.io import *
+# if __name__ == '__main__':
+#     import time
+#     from util.io import *
 
-    # input = torch.randn(1, 3, 224, 224)
-    img = read_image('../input/1.png')
-    print('origin size' + str(img.shape))
+#     # input = torch.randn(1, 3, 224, 224)
+#     img = read_image('../input/1.png')
+#     print('origin size' + str(img.shape))
 
-    #! 调整图片的大小
-    img = resize_image(img)
-    print('resize to ' + str(img.shape))
+#     #! 调整图片的大小
+#     img = resize_image(img)
+#     print('resize to ' + str(img.shape))
 
-    model = EFT(channels_last=True)
-    model.eval()
-    # device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
-    # input = input.cuda()
-    # model.to(device)
+#     model = EFT(channels_last=True)
+#     model.eval()
+#     # device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
+#     # input = input.cuda()
+#     # model.to(device)
 
-    start = time.time()
-    output = model(img)
-    end = time.time()
+#     start = time.time()
+#     output = model(img)
+#     end = time.time()
 
-    total = end - start
+#     total = end - start
 
-    print('output shape: ' + str(output.shape))
+#     print('output shape: ' + str(output.shape))
 
-    write_depth('../output/out.png', output, bits=1)
+#     write_depth('../output/out.png', output, bits=1)
 
-    print('Runing time {:.5f} s'.format(total))
+#     print('Runing time {:.5f} s'.format(total))
