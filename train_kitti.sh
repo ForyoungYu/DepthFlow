@@ -11,6 +11,7 @@ python train.py \
     --do_kb_crop \
     --same_lr \
     --epochs 100 \
+    --validate_every 500 \
     --bs 4 \
     --workers 12 \
     --filenames_file './train_test_inputs\kitti_eigen_train_files_with_gt.txt' \
@@ -25,5 +26,5 @@ python train.py \
     --min_depth_eval $MINDEPTH \
     --input_height 320 \
     --input_width 1056 \
-    # --random_crop_ratio 0.86 \
     # --resume '' \
+    # --random_crop_ratio 0.86 \

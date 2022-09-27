@@ -6,7 +6,7 @@ import numpy as np
 import torch
 import torchvision.transforms as transforms
 
-from models.EFT import MyDepthModel
+from models.EFT import EFT
 
 
 input_path = 'input'
@@ -14,26 +14,26 @@ output_path = 'output'
 img_list = os.listdir(input_path)
 
 device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
-device = torch.device('cpu')  # Force use CPU
+# device = torch.device('cpu')  # Force use CPU
 print('Device: {}'.format(device))
 
 # Define model
-model = MyDepthModel()
+model = EFT(model='l3')
 
 # Load pretrained model
-c1 = 'checkpoints/MyNet_17-Sep_18-40-nodebs8-tep10-lr0.000357-wd0.1-56a1755a-892d-4e71-bdf2-258acfd41e5f_best.pt'
-c2 = 'checkpoints/MyNet_19-Sep_16-45-nodebs10-tep25-lr0.000357-wd0.1-d99d94d7-bbf5-4ac9-a5ef-209eae0d4325_best.pt'
-c3 = 'checkpoints/MyNet_19-Sep_21-00-nodebs10-tep25-lr0.000357-wd0.1-5979b5a3-c5a9-4558-a8af-1d91700b54fe_best.pt'
-model.load_state_dict(torch.load(c3), strict=False)
+ckpt = ''
+model.load_state_dict(torch.load(ckpt), strict=False)
 model.to(device)
 model.eval()
 
 # Transform images
 def transform(img):
-    # img = cv2.resize(img,(500,500))
-    transf = transforms.ToTensor()
-    img_tensor = transf(img)  # (cxhxw)
-    return img_tensor.unsqueeze(0)  # (bxcxhxw)
+    transf = transforms.Compose([
+        transforms.ToTensor(),
+        transforms.Resize((416, 544), interpolation=2)
+    ])
+    img = transf(img) 
+    return img.unsqueeze(0)  # (bxcxhxw)
 
 for img_name in img_list:
     img = os.path.join(input_path, img_name)
@@ -66,10 +66,11 @@ for img_name in img_list:
         norm_type=cv2.NORM_MINMAX,
     )
     end = time.time()
-
     totalTime = end - start
     print("Process " + img_name + " total Time: %.2f s" % totalTime)
 
+    depth_map = (depth_map * 255).astype(np.uint8)
+    depth_map = cv2.applyColorMap(depth_map, cv2.COLORMAP_MAGMA)  # Color mode
     if not os.path.exists(output_path):
         os.mkdir(output_path)
     output_name = os.path.join(output_path, img_name)

@@ -206,7 +206,7 @@ class DataLoadPreprocess(Dataset):
 
     def train_preprocess(self, image, depth_gt):
         do_flip = random.random()
-        if do_flip > 0.5:
+        if do_flip > 0.5:  # mirror flip
             image = (image[:, ::-1, :]).copy()
             depth_gt = (depth_gt[:, ::-1, :]).copy()
 

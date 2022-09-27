@@ -5,19 +5,12 @@ import cv2
 import numpy as np
 import torch
 import torchvision.transforms as transforms
-
 from models.EFT import EFT
+from models.midas.midas_net_custom import MidasNet_small
 
-
-SHOW_WINDOW = True
-device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
-# device = torch.device('cpu')  # Force CPU
-print('Device: {}'.format(device))
-
-# Init model
-model = EFT(model='l1')
 
 def FLOPs_and_Patams(model, hw):
+    # 参数量和计算量的计算
     from thop import profile
     dummy_input = torch.randn(1, 3, hw, hw)
     flops, params = profile(model, (dummy_input,))
@@ -30,23 +23,28 @@ def FLOPs_and_Patams(model, hw):
 
 # FLOPs_and_Patams(model, 224)
 
-# Transform frames
 def transform(img):
-    # print(img.shape)
-    # img=cv2.resize(img,(500,500))
-    transf = transforms.ToTensor()
-    img_tensor = transf(img)  # (cxhxw)
-    return img_tensor.unsqueeze(0)  # (bxcxhxw)
+    # 请根据实际情况来设定transform
+    transf = transforms.Compose([
+        transforms.ToTensor(),
+        transforms.Resize((416, 544), interpolation=2)
+    ])
+    img = transf(img)  # (cxhxw)
+    return img.unsqueeze(0)  # (bxcxhxw)
 
+device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
+# device = torch.device('cpu')  # Force CPU
+print('Device: {}'.format(device))
+
+# Initial model
+model = EFT(model='l3')
 # Load pretrained model
-c1 = 'checkpoints/MyNet_17-Sep_18-40-nodebs8-tep10-lr0.000357-wd0.1-56a1755a-892d-4e71-bdf2-258acfd41e5f_best.pt'
-c2 = 'checkpoints/MyNet_19-Sep_16-45-nodebs10-tep25-lr0.000357-wd0.1-d99d94d7-bbf5-4ac9-a5ef-209eae0d4325_best.pt'
-c3 = 'checkpoints/MyNet_19-Sep_21-00-nodebs10-tep25-lr0.000357-wd0.1-5979b5a3-c5a9-4558-a8af-1d91700b54fe_best.pt'
-# model.load_state_dict(torch.load(c3), strict=False)
+ckpt = ''
+model.load_state_dict(torch.load(ckpt), strict=False)
 model.to(device)
 model.eval()
 
-cap = cv2.VideoCapture(0)
+cap = cv2.VideoCapture(1)
 
 while cap.isOpened():
     success, img = cap.read()
@@ -60,19 +58,19 @@ while cap.isOpened():
     
     # Prediction and resize to original resolution
     with torch.no_grad():
-        prediction = model(input_batch)
+        pred = model(input_batch)
         
-        # Delete last dim if it exist
-        prediction = prediction.squeeze(0)
+        if len(pred.shape) == 4:
+            pred = pred.squeeze(0)
 
-        prediction = torch.nn.functional.interpolate(
-            prediction.unsqueeze(1),
+        pred = torch.nn.functional.interpolate(
+            pred.unsqueeze(1),
             size=img.shape[:2],
             mode="bicubic",
             align_corners=False,
         ).squeeze()
 
-    depth_map = prediction.cpu().numpy()
+    depth_map = pred.cpu().numpy()
     depth_map = cv2.normalize(
         depth_map,
         None,
@@ -92,19 +90,12 @@ while cap.isOpened():
     depth_map = (depth_map * 255).astype(np.uint8)
     depth_map = cv2.applyColorMap(depth_map, cv2.COLORMAP_MAGMA)  # Color mode
 
-    if SHOW_WINDOW:
-        cv2.putText(img, f'FPS: %.2f' % fps, (20, 70), cv2.FONT_HERSHEY_SIMPLEX,
-                    1.5, (0, 255, 0), 2)
-        cv2.imshow('Image', img)
-        cv2.imshow('Depth Map', depth_map)
+    cv2.putText(img, f'FPS: %.2f' % fps, (20, 70), cv2.FONT_HERSHEY_SIMPLEX,
+                1.5, (0, 255, 0), 2)
+    cv2.imshow('Image', img)
+    cv2.imshow('Depth Map', depth_map)
 
-        if cv2.waitKey(5) & 0xFF == ord('q'):
-            break
-    # elif not os.path.exists('output'):
-    #     os.mkdir('output')
-    #     output_folder = 'output'
-    #     file_name = 'output.jpg'
-    # path = os.path.join(output_folder, file_name)
-    # cv2.imwrite(path, depth_map)
+    if cv2.waitKey(5) & 0xFF == ord('q'):
+        break
 
 cap.release()

@@ -37,8 +37,8 @@ import matplotlib
 
 
 def log_images(img, depth, pred, args, step):
-    depth = colorize(depth, vmin=args.min_depth, vmax=args.max_depth, invert=True)
-    pred = colorize(pred, vmin=args.min_depth, vmax=args.max_depth, invert=True)
+    depth = colorize(depth, vmin=args.min_depth, vmax=args.max_depth)
+    pred = colorize(pred, vmin=args.min_depth, vmax=args.max_depth)
     wandb.log(
         {
             "_Input": [wandb.Image(img)],
@@ -48,6 +48,7 @@ def log_images(img, depth, pred, args, step):
 
 # 计算模型的FLOPs和Params
 def FLOPs_and_Patams(model, hw):
+    print("FLOPs and Params: ")
     dummy_input = torch.randn(1, 3, hw, hw)
     flops, params = profile(model, (dummy_input,))
     # print('flops: ', flops, 'params: ', params)
@@ -146,7 +147,7 @@ def train(model, args, epochs=10, experiment_name="DeepLab", lr=0.0001, root="."
     # some globals
     iters = len(train_loader)
     step = args.epoch * iters
-    best_loss = np.inf  # 初始化的无穷
+    best_loss = np.inf
 
     ###################################### Scheduler ###############################################
     # 学习率按照一定的曲线变化
@@ -155,9 +156,10 @@ def train(model, args, epochs=10, experiment_name="DeepLab", lr=0.0001, root="."
                                               base_momentum=0.85, max_momentum=0.95, last_epoch=args.last_epoch,
                                               div_factor=args.div_factor,
                                               final_div_factor=args.final_div_factor)
-    if args.resume != '' and scheduler is not None:  # 从检查点导入数据
-        model, optimizer, epoch = model_io.load_checkpoint(args.resume, model, optimizer)
-        # scheduler.step(args.epoch + 1)
+    # import params from checkpoints
+    if args.resume != '' and scheduler is not None:
+        model, optimizer, args.epoch = model_io.load_checkpoint(args.resume, model, optimizer)
+        scheduler.step(args.epoch + 1)
     ################################################################################################
 
     # max_iter = len(train_loader) * epochs
@@ -198,22 +200,22 @@ def train(model, args, epochs=10, experiment_name="DeepLab", lr=0.0001, root="."
                 model.eval()
                 metrics, val_si = validate(args, model, test_loader, silog_loss, epoch, epochs, device)
                 
-                # Print Metrics
-                # print("Validated: {}".format(metrics))
                 if should_log:
                     wandb.log({
                         f"Test/{silog_loss.name}": val_si.get_value(),
                     }, step=step)
 
                     wandb.log({f"Metrics/{k}": v for k, v in metrics.items()}, step=step)
-                    model_io.save_checkpoint(model, optimizer, epoch, f"{experiment_name}_{run_id}_latest.pt",
+                    model_io.save_checkpoint(model, optimizer, epoch, best_loss, f"{experiment_name}_{run_id}_latest.pt",
                                              root=os.path.join(root, "checkpoints"))
+                    model_io.save_weights(model, f"{experiment_name}_{run_id}_latest.pt")
                     # Draw Picture
                     log_images(img, depth, pred, args, step)
 
                 if metrics['abs_rel'] < best_loss and should_write:
-                    model_io.save_checkpoint(model, optimizer, epoch, f"{experiment_name}_{run_id}_best.pt",
+                    model_io.save_checkpoint(model, optimizer, epoch,best_loss, f"{experiment_name}_{run_id}_best.pt",
                                              root=os.path.join(root, "checkpoints"))
+                    model_io.save_weights(model, f"{experiment_name}_{run_id}_best.pt")
                     best_loss = metrics['abs_rel']
                 model.train()
                 #################################################################################################
