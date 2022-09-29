@@ -7,5 +7,6 @@ checkpoints
 saved_models
 weights
 output
+input/*
 
 test.py

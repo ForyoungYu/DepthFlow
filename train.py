@@ -21,6 +21,7 @@ from dataloader import DepthDataLoader
 from loss import SILogLoss
 # Models
 from models.EFT import EFT
+from models.EFT_v2 import EFT_v2
 from models.midas.midas_net_custom import MidasNet_small
 from utils import RunningAverage, colorize, send_massage
 
@@ -32,10 +33,6 @@ token = "c9749a54b69e"
 def is_rank_zero(args):
     return args.rank == 0
 
-
-import matplotlib
-
-
 def log_images(img, depth, pred, args, step):
     depth = colorize(depth, vmin=args.min_depth, vmax=args.max_depth)
     pred = colorize(pred, vmin=args.min_depth, vmax=args.max_depth)
@@ -46,25 +43,12 @@ def log_images(img, depth, pred, args, step):
             "_Prediction": [wandb.Image(pred)]
         }, step=step)
 
-# 计算模型的FLOPs和Params
-def FLOPs_and_Patams(model, hw):
-    print("FLOPs and Params: ")
-    dummy_input = torch.randn(1, 3, hw, hw)
-    flops, params = profile(model, (dummy_input,))
-    # print('flops: ', flops, 'params: ', params)
-    print('flops: %.2f M, params: %.2f M' % (flops / 1000000.0, params / 1000000.0))
-    
-    # total = sum([param.nelement() for param in model.parameters()])
-    # print("Number of parameter: %.2fM" % (total/1e6))
-
-
 def main_worker(gpu, ngpus_per_node, args):
     args.gpu = gpu
 
     ###################################### Load model ##############################################
-    model = EFT(model='l3')
+    model = EFT_v2()
     ################################################################################################
-    # FLOPs_and_Patams(model, 224)
 
     if args.gpu is not None:  # If a gpu is set by user: NO PARALLELISM!!
         torch.cuda.set_device(args.gpu)
@@ -158,7 +142,7 @@ def train(model, args, epochs=10, experiment_name="DeepLab", lr=0.0001, root="."
                                               final_div_factor=args.final_div_factor)
     # import params from checkpoints
     if args.resume != '' and scheduler is not None:
-        model, optimizer, args.epoch = model_io.load_checkpoint(args.resume, model, optimizer)
+        model, optimizer, args.epoch, step, best_loss = model_io.load_checkpoint(args.resume, model, optimizer)
         scheduler.step(args.epoch + 1)
     ################################################################################################
 

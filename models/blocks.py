@@ -1,7 +1,10 @@
 import torch.nn as nn
+from .common import dwsconv3x3_block
 
-
-def _make_scratch(in_shape, out_shape, groups=1, expand=False):
+"""
+jump connection
+"""
+def _make_scratch(in_shape, out_shape, groups=1, dw=False , expand=False):
     """
     不改变map的形状, 只改变通道数
     """
@@ -16,43 +19,60 @@ def _make_scratch(in_shape, out_shape, groups=1, expand=False):
         out_shape2 = out_shape * 2
         out_shape3 = out_shape * 4
         out_shape4 = out_shape * 8
-
-    scratch.layer1_rn = nn.Conv2d(
-        in_shape[0],
-        out_shape1,
-        kernel_size=3,
-        stride=1,
-        padding=1,
-        bias=False,
-        groups=groups,
-    )
-    scratch.layer2_rn = nn.Conv2d(
-        in_shape[1],
-        out_shape2,
-        kernel_size=3,
-        stride=1,
-        padding=1,
-        bias=False,
-        groups=groups,
-    )
-    scratch.layer3_rn = nn.Conv2d(
-        in_shape[2],
-        out_shape3,
-        kernel_size=3,
-        stride=1,
-        padding=1,
-        bias=False,
-        groups=groups,
-    )
-    scratch.layer4_rn = nn.Conv2d(
-        in_shape[3],
-        out_shape4,
-        kernel_size=3,
-        stride=1,
-        padding=1,
-        bias=False,
-        groups=groups,
-    )
+    if dw:
+        scratch.layer1_rn = dwsconv3x3_block(
+            in_shape[0],
+            out_shape1,
+        )
+        scratch.layer2_rn = dwsconv3x3_block(
+            in_shape[1],
+            out_shape2,
+        )
+        scratch.layer3_rn = dwsconv3x3_block(
+            in_shape[2],
+            out_shape3,
+        )
+        scratch.layer4_rn = dwsconv3x3_block(
+            in_shape[3],
+            out_shape4,
+        )
+    else:
+        scratch.layer1_rn = nn.Conv2d(
+            in_shape[0],
+            out_shape1,
+            kernel_size=3,
+            stride=1,
+            padding=1,
+            bias=False,
+            groups=groups,
+        )
+        scratch.layer2_rn = nn.Conv2d(
+            in_shape[1],
+            out_shape2,
+            kernel_size=3,
+            stride=1,
+            padding=1,
+            bias=False,
+            groups=groups,
+        )
+        scratch.layer3_rn = nn.Conv2d(
+            in_shape[2],
+            out_shape3,
+            kernel_size=3,
+            stride=1,
+            padding=1,
+            bias=False,
+            groups=groups,
+        )
+        scratch.layer4_rn = nn.Conv2d(
+            in_shape[3],
+            out_shape4,
+            kernel_size=3,
+            stride=1,
+            padding=1,
+            bias=False,
+            groups=groups,
+        )
 
     return scratch
 
@@ -180,7 +200,7 @@ class FeatureFusionBlock(nn.Module):
 class ResidualConvUnit_custom(nn.Module):
     """Residual convolution module."""
 
-    def __init__(self, features, activation, bn):
+    def __init__(self, features, activation, bn, dw):
         """Init.
 
         Args:
@@ -191,27 +211,29 @@ class ResidualConvUnit_custom(nn.Module):
         self.bn = bn
 
         self.groups = 1
+        if dw:
+            self.conv1 = dwsconv3x3_block(features, features)
+            self.conv2 = dwsconv3x3_block(features, features)
+        else:
+            self.conv1 = nn.Conv2d(
+                features,
+                features,
+                kernel_size=3,
+                stride=1,
+                padding=1,
+                bias=not self.bn,
+                groups=self.groups,
+            )
 
-        # conv1 and conv2 are NOT reshape maps.
-        self.conv1 = nn.Conv2d(
-            features,
-            features,
-            kernel_size=3,
-            stride=1,
-            padding=1,
-            bias=not self.bn,
-            groups=self.groups,
-        )
-
-        self.conv2 = nn.Conv2d(
-            features,
-            features,
-            kernel_size=3,
-            stride=1,
-            padding=1,
-            bias=not self.bn,
-            groups=self.groups,
-        )
+            self.conv2 = nn.Conv2d(
+                features,
+                features,
+                kernel_size=3,
+                stride=1,
+                padding=1,
+                bias=not self.bn,
+                groups=self.groups,
+            )
 
         if self.bn == True:
             self.bn1 = nn.BatchNorm2d(features)
@@ -253,7 +275,7 @@ class FeatureFusionBlock_custom(nn.Module):
     """Feature fusion block.
     """
 
-    def __init__(self, features, activation, deconv=False, bn=False, expand=False, align_corners=True):
+    def __init__(self, features, activation, deconv=False, bn=False, dw=False, expand=False, align_corners=True):
         """Init.
 
         Args:
@@ -273,8 +295,8 @@ class FeatureFusionBlock_custom(nn.Module):
         
         self.out_conv = nn.Conv2d(features, out_features, kernel_size=1, stride=1, padding=0, bias=True, groups=1)
 
-        self.resConfUnit1 = ResidualConvUnit_custom(features, activation, bn)
-        self.resConfUnit2 = ResidualConvUnit_custom(features, activation, bn)
+        self.resConfUnit1 = ResidualConvUnit_custom(features, activation, bn, dw)
+        self.resConfUnit2 = ResidualConvUnit_custom(features, activation, bn, dw)
         
         self.skip_add = nn.quantized.FloatFunctional()
 
@@ -290,7 +312,7 @@ class FeatureFusionBlock_custom(nn.Module):
             # print("xs[1] " + str(xs[1].shape)) # 4, 256, 19, 66
             res = self.resConfUnit1(xs[1])
             # print("resConv xs[1] {}".format(xs[1].shape)) # 4, 256, 19, 66
-            output = self.skip_add.add(output, res)  #! output: (20, 66) res: (19, 66)
+            output = self.skip_add.add(output, res)
             # output += res
 
         output = self.resConfUnit2(output)

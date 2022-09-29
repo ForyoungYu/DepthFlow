@@ -6,22 +6,16 @@ import numpy as np
 import torch
 import torchvision.transforms as transforms
 from models.EFT import EFT
+from models.EFT_v2 import EFT_v2
 from models.midas.midas_net_custom import MidasNet_small
 
-
-def FLOPs_and_Patams(model, hw):
-    # 参数量和计算量的计算
-    from thop import profile
-    dummy_input = torch.randn(1, 3, hw, hw)
-    flops, params = profile(model, (dummy_input,))
-    print('flops: ', flops, 'params: ', params)
-    print('flops: %.2f M, params: %.2f M' % (flops / 1000000.0, params / 1000000.0))
-
-    # total = sum([param.nelement() for param in model.parameters()])
-    # print("Number of parameter: %.2fM" % (total/1e6))
+def flops(model,input_size):
+    from thop import profile, clever_format
+    input = torch.rand(1, 3, input_size, input_size)
+    flops, params = profile(model, inputs=(input, ))
+    flops, params = clever_format([flops, params], "%.3f")
+    print('flops: {}, params: {}'.format(flops, params))
     exit()
-
-# FLOPs_and_Patams(model, 224)
 
 def transform(img):
     # 请根据实际情况来设定transform
@@ -37,12 +31,17 @@ device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cp
 print('Device: {}'.format(device))
 
 # Initial model
-model = EFT(model='l3')
+model = EFT_v2()
+
+# flops(model, 224)
+
 # Load pretrained model
-ckpt = ''
+# ckpt = 'checkpoints\EFT_l3_kitti_27-Sep_16-06-nodebs4-tep100-lr0.000357-wd0.1_best.pt'
 model.load_state_dict(torch.load(ckpt), strict=False)
 model.to(device)
 model.eval()
+
+
 
 cap = cv2.VideoCapture(1)
 

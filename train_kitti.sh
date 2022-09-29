@@ -1,7 +1,11 @@
 #!/bin/bash
 
+# Windows Path
 DATAPATH='C:\dataset\kitti\input'
 GTPATH='C:\dataset\kitti\gt_depth'
+# Linux Path
+DATAPATH='dataset/kitti/input'
+GTPATH='dataset/kitti/gt_depth'
 MAXDEPTH=150
 MINDEPTH=1
 
@@ -27,4 +31,3 @@ python train.py \
     --input_height 320 \
     --input_width 1056 \
     # --resume '' \
-    # --random_crop_ratio 0.86 \

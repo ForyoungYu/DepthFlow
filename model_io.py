@@ -12,7 +12,7 @@ def save_weights(model, filename, path="./saved_models"):
     return
 
 
-def save_checkpoint(model, optimizer, epoch, best_loss, filename, root="./checkpoints"):
+def save_checkpoint(model, optimizer, epoch, step, best_loss, filename, root="./checkpoints"):
     if not os.path.isdir(root):
         os.makedirs(root)
 
@@ -22,6 +22,7 @@ def save_checkpoint(model, optimizer, epoch, best_loss, filename, root="./checkp
             "model": model.state_dict(),
             "optimizer": optimizer.state_dict(),
             "epoch": epoch,
+            "step": step,
             "best_loss": best_loss
         }
         , fpath)
@@ -42,6 +43,7 @@ def load_checkpoint(fpath, model, optimizer=None):
         optimizer.load_state_dict(ckpt['optimizer'])
     epoch = ckpt['epoch']
     best_loss = ckpt['best_loss']
+    step = ckpt['step']
     if 'model' in ckpt:
         ckpt = ckpt['model']
     load_dict = {}
@@ -52,22 +54,5 @@ def load_checkpoint(fpath, model, optimizer=None):
         else:
             load_dict[k] = v
 
-    # modified = {}  # backward compatibility to older naming of architecture blocks
-    # for k, v in load_dict.items():
-    #     if k.startswith('adaptive_bins_layer.embedding_conv.'):
-    #         k_ = k.replace('adaptive_bins_layer.embedding_conv.',
-    #                        'adaptive_bins_layer.conv3x3.')
-    #         modified[k_] = v
-    #         # del load_dict[k]
-
-    #     elif k.startswith('adaptive_bins_layer.patch_transformer.embedding_encoder'):
-
-    #         k_ = k.replace('adaptive_bins_layer.patch_transformer.embedding_encoder',
-    #                        'adaptive_bins_layer.patch_transformer.embedding_convPxP')
-    #         modified[k_] = v
-    #         # del load_dict[k]
-    #     else:
-    #         modified[k] = v  # else keep the original
-
     model.load_state_dict(load_dict)
-    return model, optimizer, epoch, best_loss
+    return model, optimizer, epoch, step, best_loss
