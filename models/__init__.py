@@ -1,2 +1,4 @@
-from .backbone.efficientformer import EfficientFormer, efficientformer_l1_feat, efficientformer_l3_feat, efficientformer_l7_feat
+from .midas import MidasNet
+from .midas import MidasNet_small
 from .EFT import EFT
+from .EFTv2 import EFTv2

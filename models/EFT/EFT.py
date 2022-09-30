@@ -1,22 +1,16 @@
 import torch
 import torch.nn as nn
 
-from .backbone.efficientformer import EfficientFormer
-from .base_model import BaseModel
+from .efficientformer import EfficientFormer
+from ..base_model import BaseModel
 from .blocks import FeatureFusionBlock_custom, Interpolate, _make_scratch
-
-"""
-添加了MoCoVit模块和dwconv
-
-"""
 
 # 每个stage的MB输出维度
 EfficientFormer_width = { # x2
     # 'l1': [48, 96, 224, 448],
-    'l1': [48, 96, 192, 384],
-    'l3': [64, 128, 320, 512],
-    'l7': [96, 192, 384, 768],
-    'custom': [64, 128, 256, 512]
+    'l1': [48, 96, 192, 384],  # x2
+    'l3': [64, 128, 320, 512],  # x2
+    'l7': [96, 192, 384, 768],  # x2
 }
 
 # 每个stage的MB个数
@@ -24,7 +18,6 @@ EfficientFormer_depth = {
     'l1': [3, 2, 6, 4],
     'l3': [4, 4, 12, 6],
     'l7': [6, 6, 18, 8],
-    'custom': [4, 4, 6, 6]
 }
 
 
@@ -58,20 +51,31 @@ class efficientformer_l7_feat(EfficientFormer):
                          vit_num=8,
                          **kwargs)
 
-class efficientformer_custom_feat(EfficientFormer):
-    def __init__(self, **kwargs):
-        super().__init__(layers=EfficientFormer_depth['custom'],
-                         embed_dims=EfficientFormer_width['custom'],
-                         downsamples=[True, True, True, True],
-                         layer_scale_init_value=1e-6,
-                         fork_feat=True,
-                         vit_num=8,
-                         act_layer=nn.ReLU,
-                         **kwargs)
-  
+
+class DSConv(nn.Module):
+    """
+    深度可分离卷积
+    """
+    def __init__(self, in_ch, out_ch, groups):
+        super(DSConv, self).__init__()
+        self.conv = nn.Conv2d(
+            in_channels=in_ch,
+            out_channels=out_ch,
+            kernel_size=3,
+            stride=1,
+            padding=1,
+            groups=groups,
+            bias=False
+        )
+
+    def forward(self, input):
+        out = self.conv(input)
+        return out
+
+
 # My Code
-class EFT_v2(BaseModel):
-    def __init__(self, path=None, features=64, non_negative=True, channels_last=False, use_bn=True, align_corners=True, 
+class EFT(BaseModel):
+    def __init__(self, path=None, features=64, model='l1', non_negative=True, channels_last=False, use_bn=True, align_corners=True, 
                  blocks={'expand': True}):
         """Init.
 
@@ -83,10 +87,11 @@ class EFT_v2(BaseModel):
         if path:
             print("Loading weights: ", path)
 
-        super(EFT_v2, self).__init__()
+        super(EFT, self).__init__()
 
         self.channels_last = channels_last
         self.blocks = blocks
+        self.model = model
 
         self.groups = 1
 
@@ -103,18 +108,26 @@ class EFT_v2(BaseModel):
             features3 = features * 4
             features4 = features * 8
 
-        # Backbone
-        self.model = efficientformer_custom_feat()
-
+        # EfficientFormer Backbone
+        if model == 'l1':
+            self.model = efficientformer_l1_feat()
+        elif model == 'l3':
+            self.model = efficientformer_l3_feat()
+        elif model == 'l7':
+            self.model = efficientformer_l7_feat()
+        else:
+            print("Invalid backbone")
+            assert False
+        
         # Neck
-        self.scratch = _make_scratch(EfficientFormer_width['custom'], features, dw=True, expand=self.expand)
+        self.scratch = _make_scratch(EfficientFormer_width[model], features, expand=self.expand)
 
         # Fusion
         self.scratch.activation = nn.ReLU(False)
-        self.scratch.refinenet4 = FeatureFusionBlock_custom(features4, self.scratch.activation, deconv=False, bn=use_bn, dw=True, expand=self.expand, align_corners=align_corners)
-        self.scratch.refinenet3 = FeatureFusionBlock_custom(features3, self.scratch.activation, deconv=False, bn=use_bn, dw=True, expand=self.expand, align_corners=align_corners)
-        self.scratch.refinenet2 = FeatureFusionBlock_custom(features2, self.scratch.activation, deconv=False, bn=use_bn, dw=True, expand=self.expand, align_corners=align_corners)
-        self.scratch.refinenet1 = FeatureFusionBlock_custom(features1, self.scratch.activation, deconv=False, bn=use_bn, dw=True, align_corners=align_corners)
+        self.scratch.refinenet4 = FeatureFusionBlock_custom(features4, self.scratch.activation, deconv=False, bn=use_bn, expand=self.expand, align_corners=align_corners)
+        self.scratch.refinenet3 = FeatureFusionBlock_custom(features3, self.scratch.activation, deconv=False, bn=use_bn, expand=self.expand, align_corners=align_corners)
+        self.scratch.refinenet2 = FeatureFusionBlock_custom(features2, self.scratch.activation, deconv=False, bn=use_bn, expand=self.expand, align_corners=align_corners)
+        self.scratch.refinenet1 = FeatureFusionBlock_custom(features1, self.scratch.activation, deconv=False, bn=use_bn, align_corners=align_corners)
 
         # Head
         self.scratch.output_conv = nn.Sequential(

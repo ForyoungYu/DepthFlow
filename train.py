@@ -20,8 +20,7 @@ import wandb
 from dataloader import DepthDataLoader
 from loss import SILogLoss
 # Models
-from models.EFT import EFT
-from models.EFT_v2 import EFT_v2
+from models.EFT import EFT, EFTv2
 from models.midas.midas_net_custom import MidasNet_small
 from utils import RunningAverage, colorize, send_massage
 

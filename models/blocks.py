@@ -1,326 +1,215 @@
+import math
+
+import torch
 import torch.nn as nn
-from .common import dwsconv3x3_block
 
-"""
-jump connection
-"""
-def _make_scratch(in_shape, out_shape, groups=1, dw=False , expand=False):
-    """
-    不改变map的形状, 只改变通道数
-    """
-    scratch = nn.Module()
-
-    out_shape1 = out_shape
-    out_shape2 = out_shape
-    out_shape3 = out_shape
-    out_shape4 = out_shape
-    if expand == True:
-        out_shape1 = out_shape
-        out_shape2 = out_shape * 2
-        out_shape3 = out_shape * 4
-        out_shape4 = out_shape * 8
-    if dw:
-        scratch.layer1_rn = dwsconv3x3_block(
-            in_shape[0],
-            out_shape1,
-        )
-        scratch.layer2_rn = dwsconv3x3_block(
-            in_shape[1],
-            out_shape2,
-        )
-        scratch.layer3_rn = dwsconv3x3_block(
-            in_shape[2],
-            out_shape3,
-        )
-        scratch.layer4_rn = dwsconv3x3_block(
-            in_shape[3],
-            out_shape4,
-        )
-    else:
-        scratch.layer1_rn = nn.Conv2d(
-            in_shape[0],
-            out_shape1,
-            kernel_size=3,
-            stride=1,
-            padding=1,
-            bias=False,
-            groups=groups,
-        )
-        scratch.layer2_rn = nn.Conv2d(
-            in_shape[1],
-            out_shape2,
-            kernel_size=3,
-            stride=1,
-            padding=1,
-            bias=False,
-            groups=groups,
-        )
-        scratch.layer3_rn = nn.Conv2d(
-            in_shape[2],
-            out_shape3,
-            kernel_size=3,
-            stride=1,
-            padding=1,
-            bias=False,
-            groups=groups,
-        )
-        scratch.layer4_rn = nn.Conv2d(
-            in_shape[3],
-            out_shape4,
-            kernel_size=3,
-            stride=1,
-            padding=1,
-            bias=False,
-            groups=groups,
-        )
-
-    return scratch
+from .common import SEBlock, conv1x1_block, dwconv3x3_block
 
 
-def _make_fusion_block(features, use_bn):
-    return FeatureFusionBlock_custom(
-        features,
-        nn.ReLU(False),
-        deconv=False,
-        bn=use_bn,
-        expand=False,
-        align_corners=True,
-    )
+# 反卷积
+class InvertedResidual(nn.Module):
+    """ InvertedResidual """
+    def __init__(self, inp, oup, stride, expand_ratio):
+        super(InvertedResidual, self).__init__()
+        self.stride = stride
+        assert stride in [1, 2]
 
-class Interpolate(nn.Module):
-    """Interpolation module."""
+        hidden_dim = round(inp * expand_ratio)
+        self.use_res_connect = self.stride == 1 and inp == oup
 
-    def __init__(self, scale_factor, mode, align_corners=False):
-        """Init.
-
-        Args:
-            scale_factor (float): scaling
-            mode (str): interpolation mode
-        """
-        super(Interpolate, self).__init__()
-
-        self.interp = nn.functional.interpolate
-        self.scale_factor = scale_factor
-        self.mode = mode
-        self.align_corners = align_corners
-
-    def forward(self, x):
-        """Forward pass.
-
-        Args:
-            x (tensor): input
-
-        Returns:
-            tensor: interpolated data
-        """
-
-        x = self.interp(
-            x,
-            scale_factor=self.scale_factor,
-            mode=self.mode,
-            align_corners=self.align_corners,
-        )
-
-        return x
-
-class ResidualConvUnit(nn.Module):
-    """Residual convolution module.
-    """
-
-    def __init__(self, features):
-        """Init.
-
-        Args:
-            features (int): number of features
-        """
-        super().__init__()
-
-        self.conv1 = nn.Conv2d(
-            features, features, kernel_size=3, stride=1, padding=1, bias=True
-        )
-
-        self.conv2 = nn.Conv2d(
-            features, features, kernel_size=3, stride=1, padding=1, bias=True
-        )
-
-        self.relu = nn.ReLU(inplace=True)
-
-    def forward(self, x):
-        """Forward pass.
-
-        Args:
-            x (tensor): input
-
-        Returns:
-            tensor: output
-        """
-        out = self.relu(x)
-        out = self.conv1(out)
-        out = self.relu(out)
-        out = self.conv2(out)
-
-        return out + x
-
-
-class FeatureFusionBlock(nn.Module):
-    """Feature fusion block.
-    """
-
-    def __init__(self, features):
-        """Init.
-
-        Args:
-            features (int): number of features
-        """
-        super(FeatureFusionBlock, self).__init__()
-
-        self.resConfUnit1 = ResidualConvUnit(features)
-        self.resConfUnit2 = ResidualConvUnit(features)
-
-    def forward(self, *xs):
-        """Forward pass.
-
-        Returns:
-            tensor: output
-        """
-        output = xs[0]
-
-        if len(xs) == 2:
-            output += self.resConfUnit1(xs[1])
-
-        output = self.resConfUnit2(output)
-
-        output = nn.functional.interpolate(
-            output, scale_factor=2, mode="bilinear", align_corners=True
-        )
-
-        return output
-
-
-class ResidualConvUnit_custom(nn.Module):
-    """Residual convolution module."""
-
-    def __init__(self, features, activation, bn, dw):
-        """Init.
-
-        Args:
-            features (int): number of features
-        """
-        super().__init__()
-
-        self.bn = bn
-
-        self.groups = 1
-        if dw:
-            self.conv1 = dwsconv3x3_block(features, features)
-            self.conv2 = dwsconv3x3_block(features, features)
+        if expand_ratio == 1:
+            self.conv = nn.Sequential(
+                # dw
+                nn.Conv2d(hidden_dim,
+                          hidden_dim,
+                          3,
+                          stride,
+                          1,
+                          groups=hidden_dim,
+                          bias=False),
+                nn.BatchNorm2d(hidden_dim),
+                nn.ReLU6(inplace=True),
+                # pw-linear
+                nn.Conv2d(hidden_dim, oup, 1, 1, 0, bias=False),
+                nn.BatchNorm2d(oup),
+            )
         else:
-            self.conv1 = nn.Conv2d(
-                features,
-                features,
-                kernel_size=3,
-                stride=1,
-                padding=1,
-                bias=not self.bn,
-                groups=self.groups,
+            self.conv = nn.Sequential(
+                # pw
+                nn.Conv2d(inp, hidden_dim, 1, 1, 0, bias=False),
+                nn.BatchNorm2d(hidden_dim),
+                nn.ReLU6(inplace=True),
+                # dw
+                nn.Conv2d(hidden_dim,
+                          hidden_dim,
+                          3,
+                          stride,
+                          1,
+                          groups=hidden_dim,
+                          bias=False),
+                nn.BatchNorm2d(hidden_dim),
+                nn.ReLU6(inplace=True),
+                # pw-linear
+                nn.Conv2d(hidden_dim, oup, 1, 1, 0, bias=False),
+                nn.BatchNorm2d(oup),
             )
-
-            self.conv2 = nn.Conv2d(
-                features,
-                features,
-                kernel_size=3,
-                stride=1,
-                padding=1,
-                bias=not self.bn,
-                groups=self.groups,
-            )
-
-        if self.bn == True:
-            self.bn1 = nn.BatchNorm2d(features)
-            self.bn2 = nn.BatchNorm2d(features)
-
-        self.activation = activation
-
-        self.skip_add = nn.quantized.FloatFunctional()
 
     def forward(self, x):
-        """Forward pass.
-
-        Args:
-            x (tensor): input
-
-        Returns:
-            tensor: output
-        """
-
-        out = self.activation(x)
-        out = self.conv1(out)
-        if self.bn == True:
-            out = self.bn1(out)
-
-        out = self.activation(out)
-        out = self.conv2(out)
-        if self.bn == True:
-            out = self.bn2(out)
-
-        if self.groups > 1:
-            out = self.conv_merge(out)
-
-        return self.skip_add.add(out, x)
-
-        # return out + x
+        if self.use_res_connect:
+            return x + self.conv(x)
+        else:
+            return self.conv(x)
 
 
-class FeatureFusionBlock_custom(nn.Module):
-    """Feature fusion block.
+class GhostConvBlock(nn.Module):
     """
+    GhostNet specific convolution block.
+    Parameters:
+    ----------
+    in_channels : int
+        Number of input channels.
+    out_channels : int
+        Number of output channels.
+    activation : function or str or None, default nn.ReLU(inplace=True)
+        Activation function or name of activation function.
+    """
+    def __init__(self,
+                 in_channels,
+                 out_channels,
+                 activation=(lambda: nn.ReLU(inplace=True))):
+        super(GhostConvBlock, self).__init__()
+        main_out_channels = math.ceil(0.5 * out_channels)  # ceil: 向上取整
+        cheap_out_channels = out_channels - main_out_channels
 
-    def __init__(self, features, activation, deconv=False, bn=False, dw=False, expand=False, align_corners=True):
-        """Init.
+        self.main_conv = conv1x1_block(in_channels=in_channels,
+                                       out_channels=main_out_channels,
+                                       activation=activation)
+        self.cheap_conv = dwconv3x3_block(in_channels=main_out_channels,
+                                          out_channels=cheap_out_channels,
+                                          activation=activation)
+
+    def forward(self, x):
+        x = self.main_conv(x)
+        y = self.cheap_conv(x)
+        return torch.cat((x, y), dim=1)
+
+
+"""Module containing all components necessary for creating a MoCoVit network.
+
+Based on https://arxiv.org/abs/2205.12635v1. Seriously, read the paper!
+
+Variable names try to follow ghostnet.pytorch repository.
+"""
+
+
+class MoSA(nn.Module):
+    """Mobile Self-Attention Module"""
+    def __init__(self, inp: int, oup: int):
+        """Initialize a MoSA module.
 
         Args:
-            features (int): number of features
+            inp (int): Input channel size.
+            oup (int): Output channel size.
         """
-        super(FeatureFusionBlock_custom, self).__init__()
+        super(MoSA, self).__init__()
+        self.dim_head = 64
+        self.scale = self.dim_head**-0.5
+        self.attend = nn.Softmax(dim=-1)
+        self.dw_conv = dwconv3x3_block(inp, inp)
+        self.ghost_module = GhostConvBlock(inp, oup)
 
-        self.deconv = deconv
-        self.align_corners = align_corners
+    def forward(self, v: torch.Tensor) -> torch.Tensor:
+        """Calculate mobile self-attention. See Equation 3.
 
-        self.groups=1
-
-        self.expand = expand
-        out_features = features
-        if self.expand==True:
-            out_features = features//2
-        
-        self.out_conv = nn.Conv2d(features, out_features, kernel_size=1, stride=1, padding=0, bias=True, groups=1)
-
-        self.resConfUnit1 = ResidualConvUnit_custom(features, activation, bn, dw)
-        self.resConfUnit2 = ResidualConvUnit_custom(features, activation, bn, dw)
-        
-        self.skip_add = nn.quantized.FloatFunctional()
-
-    def forward(self, *xs):
-        """Forward pass.
+        Args:
+            v (torch.Tensor): Input vector representing the 'Value' in Q, K, V.
 
         Returns:
-            tensor: output
+            torch.Tensor: Result of mobile self-attention.
         """
-        output = xs[0]
-        # print("xs[0] " + str(output.shape))
-        if len(xs) == 2:
-            # print("xs[1] " + str(xs[1].shape)) # 4, 256, 19, 66
-            res = self.resConfUnit1(xs[1])
-            # print("resConv xs[1] {}".format(xs[1].shape)) # 4, 256, 19, 66
-            output = self.skip_add.add(output, res)
-            # output += res
+        out = torch.matmul(
+            self.attend(torch.matmul(v, v.transpose(-1, -2)) * self.scale), v)
+        out = out + self.dw_conv(v)
 
-        output = self.resConfUnit2(output)
-        # print("Before " + str(output.shape))
-        output = nn.functional.interpolate(
-            output, scale_factor=2, mode="bilinear", align_corners=self.align_corners
+        return self.ghost_module(out)
+
+
+class MoFFN(nn.Module):
+    """Mobile Feed Forward Network"""
+    def __init__(self, inp: int, hidden_dim: int, oup: int):
+        """Initialize a MoFFN module.
+
+        Args:
+            inp (int): Input channel size.
+            hidden_dim (int): Hidden dimension size.
+            oup (int): Output channel size.
+        """
+        super(MoFFN, self).__init__()
+        self.ffn = nn.Sequential(
+            GhostConvBlock(inp, hidden_dim),
+            SEBlock(
+                hidden_dim),  # hideen_dim must less than SENlock reduction.
+            GhostConvBlock(hidden_dim, oup),
         )
-        # print("After " + str(output.shape))
-        output = self.out_conv(output)  # C/2
 
-        return output
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """Forward pass of MoFFN.
+
+        Args:
+            x (torch.Tensor): Input tensor.
+
+        Returns:
+            torch.Tensor: Output tensor.
+        """
+        return self.ffn(x) + x
+
+
+class MoTBlock(nn.Module):
+    """Mobile Transformer Block"""
+    def __init__(self, inp: int, hidden_dim: int, oup: int):
+        """Initialize a MoTBlock module.
+
+        Args:
+            inp (int): Input channel size.
+            hidden_dim (int): Hidden dimension size.
+            oup (int): Output channel size.
+        """
+        super(MoTBlock, self).__init__()
+        self.mosa = MoSA(inp, oup)
+        self.moffn = MoFFN(inp, hidden_dim, oup)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """Forward pass of MoTBlock.
+
+        Args:
+            x (torch.Tensor): Input tensor.
+
+        Returns:
+            torch.Tensor: Output tensor.
+        """
+        # print('x: {}'.format(x.shape))
+        # print(self.mosa(x).shape)
+        mosa_out = self.mosa(x) + x
+        moffn_out = self.moffn(mosa_out)
+
+        return moffn_out + mosa_out
+
+
+def _make_divisible(v, divisor, min_value=None):
+    """
+    This function is taken from the original tf repo.
+    It ensures that all layers have a channel number that is divisible by 8
+    It can be seen here:
+    https://github.com/tensorflow/models/blob/master/research/slim/nets/mobilenet/mobilenet.py
+    :param v:
+    :param divisor:
+    :param min_value:
+    :return:
+    """
+    if min_value is None:
+        min_value = divisor
+    new_v = max(min_value, int(v + divisor / 2) // divisor * divisor)
+    # Make sure that round down does not go down by more than 10%.
+    if new_v < 0.9 * v:
+        new_v += divisor
+    return new_v

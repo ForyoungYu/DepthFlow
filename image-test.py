@@ -6,7 +6,7 @@ import numpy as np
 import torch
 import torchvision.transforms as transforms
 
-from models.EFT import EFT
+from models import EFT
 
 
 input_path = 'input'
