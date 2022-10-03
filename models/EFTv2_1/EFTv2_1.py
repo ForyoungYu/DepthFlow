@@ -3,9 +3,9 @@ import torch.nn as nn
 
 from .efficientformer import EfficientFormer
 from ..modules.base_model import BaseModel
-from .blocks import FeatureFusionBlock_custom, Interpolate, _make_scratch
+from .blocks import FeatureFusionBlock_custom, Interpolate, _make_crp
 """
-添加了MoCoVit模块，末使用dw
+添加了MoCoVit模块和dwconv
 
 """
 
@@ -40,20 +40,19 @@ class Backbone(EfficientFormer):
 
 
 # My Code
-class EFTv2(BaseModel):
+class EFTv2_1(BaseModel):
     def __init__(self,
                  path=None,
                  features=features['custom'],
                  non_negative=True,
                  channels_last=False,
                  use_bn=True,
-                 use_dw=False,
                  align_corners=True,
                  blocks={'expand': True}):
         if path:
             print("Loading weights: ", path)
 
-        super(EFTv2, self).__init__()
+        super(EFTv2_1, self).__init__()
 
         self.channels_last = channels_last
         self.blocks = blocks
@@ -65,9 +64,10 @@ class EFTv2(BaseModel):
         self.backbone = Backbone()
 
         # Neck
-        self.scratch = _make_scratch(features, features, dw=use_dw)
+        self.scratch = _make_crp(features, features)
 
         # Fusion
+        use_dw = False
         self.scratch.activation = nn.ReLU(False)
         self.scratch.refinenet4 = FeatureFusionBlock_custom(
             features[3],
@@ -140,24 +140,24 @@ class EFTv2(BaseModel):
         # print(out[2].shape)
         # print(out[3].shape)
 
+        crp1 = self.scratch.layer1(out[0])
+        crp2 = self.scratch.layer2(out[1])
+        crp3 = self.scratch.layer3(out[2])
+        crp4 = self.scratch.layer4(out[3])
         # print('=== layers ===')
-        layer_1_rn = self.scratch.layer1_rn(out[0])
         # print(layer_1_rn.shape)
-        layer_2_rn = self.scratch.layer2_rn(out[1])
         # print(layer_2_rn.shape)
-        layer_3_rn = self.scratch.layer3_rn(out[2])
         # print(layer_3_rn.shape)
-        layer_4_rn = self.scratch.layer4_rn(out[3])
         # print(layer_4_rn.shape)
 
+        path_4 = self.scratch.refinenet4(crp4)
+        path_3 = self.scratch.refinenet3(path_4, crp3)
+        path_2 = self.scratch.refinenet2(path_3, crp2)
+        path_1 = self.scratch.refinenet1(path_2, crp1)
         # print('=== pathes ===')
-        path_4 = self.scratch.refinenet4(layer_4_rn)
         # print("path_4 " + str(path_4.shape))
-        path_3 = self.scratch.refinenet3(path_4, layer_3_rn)
         # print("path3 " + str(path_3.shape))
-        path_2 = self.scratch.refinenet2(path_3, layer_2_rn)
         # print("path2 " + str(path_2.shape))
-        path_1 = self.scratch.refinenet1(path_2, layer_1_rn)
         # print("path1 " + str(path_1.shape))
 
         out = self.scratch.output_conv(path_1)

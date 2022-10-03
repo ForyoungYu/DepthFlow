@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 
 from .efficientformer import EfficientFormer
-from ..base_model import BaseModel
+from ..modules.base_model import BaseModel
 from .blocks import FeatureFusionBlock_custom, Interpolate, _make_scratch
 
 # 每个stage的MB输出维度

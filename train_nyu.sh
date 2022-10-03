@@ -4,8 +4,8 @@
 DATAPATH='C:\dataset\nyu\sync'
 EVALPATH='C:\dataset\nyu\official_splits\test'
 # Linux Path
-DATAPATH='dataset/nyu/sync'
-EVALPATH='dataset/nyu/official_splits/test'
+# DATAPATH='dataset/nyu/sync'
+# EVALPATH='dataset/nyu/official_splits/test'
 
 python train.py \
     --name 'EFT_l3_nyu' \

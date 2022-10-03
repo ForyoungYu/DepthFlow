@@ -1,24 +1,26 @@
 import torch.nn as nn
 from ..modules.common import dwsconv3x3_block
+from models.modules.blocks import CRPBlock
 
 """
 jump connection
 """
-def _make_scratch(in_shape, out_shape, groups=1, dw=False, expand=False):
+
+def _make_crp(in_planes, out_planes, stages=4):
+    scratch = nn.Module()
+    scratch.layer1 = CRPBlock(in_planes[0], out_planes[0], n_stages=stages, groups=False)
+    scratch.layer2 = CRPBlock(in_planes[1], out_planes[1], n_stages=stages, groups=False)
+    scratch.layer3 = CRPBlock(in_planes[2], out_planes[2], n_stages=stages, groups=False)
+    scratch.layer4 = CRPBlock(in_planes[3], out_planes[3], n_stages=stages, groups=True)
+    return scratch
+
+
+def _make_scratch(in_shape, out_shape, groups=1, dw=False):
     """
     不改变map的形状, 只改变通道数
     """
     scratch = nn.Module()
-
-    out_shape1 = out_shape
-    out_shape2 = out_shape
-    out_shape3 = out_shape
-    out_shape4 = out_shape
-    if expand == True:
-        out_shape1 = out_shape
-        out_shape2 = out_shape * 2
-        out_shape3 = out_shape * 4
-        out_shape4 = out_shape * 8
+    
     if dw:
         scratch.layer1_rn = dwsconv3x3_block(
             in_shape[0],
@@ -39,7 +41,7 @@ def _make_scratch(in_shape, out_shape, groups=1, dw=False, expand=False):
     else:
         scratch.layer1_rn = nn.Conv2d(
             in_shape[0],
-            out_shape1,
+            out_shape[0],
             kernel_size=3,
             stride=1,
             padding=1,
@@ -48,7 +50,7 @@ def _make_scratch(in_shape, out_shape, groups=1, dw=False, expand=False):
         )
         scratch.layer2_rn = nn.Conv2d(
             in_shape[1],
-            out_shape2,
+            out_shape[1],
             kernel_size=3,
             stride=1,
             padding=1,
@@ -57,7 +59,7 @@ def _make_scratch(in_shape, out_shape, groups=1, dw=False, expand=False):
         )
         scratch.layer3_rn = nn.Conv2d(
             in_shape[2],
-            out_shape3,
+            out_shape[2],
             kernel_size=3,
             stride=1,
             padding=1,
@@ -66,7 +68,7 @@ def _make_scratch(in_shape, out_shape, groups=1, dw=False, expand=False):
         )
         scratch.layer4_rn = nn.Conv2d(
             in_shape[3],
-            out_shape4,
+            out_shape[3],
             kernel_size=3,
             stride=1,
             padding=1,

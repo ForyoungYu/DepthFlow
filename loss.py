@@ -1,64 +1,95 @@
 import torch
 import torch.nn as nn
-# from pytorch3d.loss import chamfer_distance
-from torch.nn.utils.rnn import pad_sequence
 
-# Adabins 
-class SILogLoss(nn.Module):  # Main loss function used in AdaBins paper
+
+class SILogLoss(nn.Module):
     def __init__(self):
         super(SILogLoss, self).__init__()
         self.name = 'SILog'
+        self.eps = 0.001  # avoid grad explode
 
     def forward(self, input, target, mask=None, interpolate=True):
-        o = 1e-8
         # n, c, h, w = target.shape
         if interpolate:
             # interpolate input shape: n, c, h, w
-            input = nn.functional.interpolate(input, target.shape[-2:], mode='bilinear', align_corners=True)
+            input = nn.functional.interpolate(input,
+                                              target.shape[-2:],
+                                              mode='bilinear',
+                                              align_corners=True)
 
         if mask is not None:  # 对mask为True的值进行保留，并转换成一维数据
             input = input[mask]
             target = target[mask]
-        g = torch.log(input + o) - torch.log(target + o)
+        g = torch.log(input + self.eps) - torch.log(target + self.eps)
         # n, c, h, w = g.shape
         # norm = 1/(h*w)  # 1/T
         # Dg = norm * torch.sum(g**2) - (0.85*(norm**2)) * (torch.sum(g))**2  # Dg >=0
-        Dg = torch.var(g) + 0.15 * torch.pow(torch.mean(g), 2)  # Dg >= 0
+        Dg = torch.var(g) + 0.15 * torch.pow(torch.mean(g), 2)
         # print("Dg: {}".format(Dg))
         return 10 * torch.sqrt(Dg)
 
 
-class BinsChamferLoss(nn.Module):  # Bin centers regularizer used in AdaBins paper
-    def __init__(self):
-        super().__init__()
-        self.name = "ChamferLoss"
+class SigLoss(nn.Module):
+    """SigLoss.
+        We adopt the implementation in `Adabins <https://github.com/shariqfarooq123/AdaBins/blob/main/loss.py>`_.
+    Args:
+        valid_mask (bool): Whether filter invalid gt (gt > 0). Default: True.
+        loss_weight (float): Weight of the loss. Default: 1.0.
+        max_depth (int): When filtering invalid gt, set a max threshold. Default: None.
+        warm_up (bool): A simple warm up stage to help convergence. Default: False.
+        warm_iter (int): The number of warm up stage. Default: 100.
+    """
+    def __init__(self,
+                 valid_mask=True,
+                 loss_weight=1.0,
+                 min_depth=0,
+                 max_depth=None,
+                 warm_up=False,
+                 warm_iter=100,
+                 interpolate=True):
+        super(SigLoss, self).__init__()
+        self.name = 'SILog'
+        self.valid_mask = valid_mask
+        self.loss_weight = loss_weight
+        self.min_depth = min_depth
+        self.max_depth = max_depth
+        self.interpolate = interpolate
 
-    def forward(self, bins, target_depth_maps):
-        bin_centers = 0.5 * (bins[:, 1:] + bins[:, :-1])
-        n, p = bin_centers.shape
-        input_points = bin_centers.view(n, p, 1)  # .shape = n, p, 1
-        # n, c, h, w = target_depth_maps.shape
+        self.eps = 0.001  # avoid grad explode
 
-        target_points = target_depth_maps.flatten(1)  # n, hwc
-        mask = target_points.ge(1e-3)  # only valid ground truth points
-        target_points = [p[m] for p, m in zip(target_points, mask)]
-        target_lengths = torch.Tensor([len(t) for t in target_points]).long().to(target_depth_maps.device)
-        target_points = pad_sequence(target_points, batch_first=True).unsqueeze(2)  # .shape = n, T, 1
+        # HACK: a hack implementation for warmup sigloss
+        self.warm_up = warm_up
+        self.warm_iter = warm_iter
+        self.warm_up_counter = 0
 
-        loss, _ = chamfer_distance(x=input_points, y=target_points, y_lengths=target_lengths)
-        return loss
+    def sigloss(self, input, target):
+        if self.interpolate:
+            # interpolate input shape: n, c, h, w
+            input = nn.functional.interpolate(input,
+                                              target.shape[-2:],
+                                              mode='bilinear',
+                                              align_corners=True)
+        if self.valid_mask:
+            valid_mask = target > self.min_depth
+            if self.max_depth is not None:
+                valid_mask = torch.logical_and(target > self.min_depth,
+                                               target <= self.max_depth)
+            input = input[valid_mask]
+            target = target[valid_mask]
 
-# if __name__ == '__main__':
-#     input = torch.tensor([[.1, .1, .9], [.5, .5, .5], [.1, .1, .9]]).unsqueeze(0).unsqueeze(0)
-#     # input = torch.randint(1, 10, (3, 3)).unsqueeze(0).unsqueeze(0) / 10
-#     # input = torch.randn((3, 3)).unsqueeze(0).unsqueeze(0)
-#     target = torch.tensor([[.2,.1,.8], [.5, .4, 0.2], [0.2, 0.3, 0.6]]).unsqueeze(0).unsqueeze(0)
-#     mask = torch.tensor([[True, True, False], [True, True, False], [False, True, True]]).unsqueeze(0).unsqueeze(0)
+        if self.warm_up:
+            if self.warm_up_counter < self.warm_iter:
+                g = torch.log(input + self.eps) - torch.log(target + self.eps)
+                g = 0.15 * torch.pow(torch.mean(g), 2)
+                self.warm_up_counter += 1
+                return torch.sqrt(g)
 
-#     print(input)
-#     print(target)
-#     print(mask)
+        g = torch.log(input + self.eps) - torch.log(target + self.eps)
+        Dg = torch.var(g) + 0.15 * torch.pow(torch.mean(g), 2)
+        return torch.sqrt(Dg)
 
-#     loss = SILogLoss()
-#     out = loss(input, target, mask=mask)
-#     print(out)
+    def forward(self, depth_pred, depth_gt):
+        """Forward function."""
+
+        loss_depth = self.loss_weight * self.sigloss(depth_pred, depth_gt)
+        return loss_depth

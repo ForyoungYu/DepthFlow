@@ -1,5 +1,5 @@
 import torch.nn as nn
-from ..common import dwsconv3x3_block
+from ..modules.common import dwsconv3x3_block
 
 """
 jump connection

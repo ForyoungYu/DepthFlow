@@ -11,23 +11,21 @@ import torch.multiprocessing as mp
 import torch.nn as nn
 import torch.optim as optim
 import torch.utils.data.distributed
-from thop import profile
 from tqdm import tqdm
 
 import model_io
 import utils
 import wandb
 from dataloader import DepthDataLoader
-from loss import SILogLoss
-# Models
-from models.EFT import EFT, EFTv2
-from models.midas.midas_net_custom import MidasNet_small
+from loss import SigLoss
+from models import EFT, EFTv2
 from utils import RunningAverage, colorize, send_massage
 
 # os.environ['WANDB_MODE'] = 'dryrun'
-PROJECT = "depthflow"
+PROJECT = "depthflow-nyu"
+# PROJECT = "depthflow-kitti"
 logging = True
-token = "c9749a54b69e"
+autodl_token = "c9749a54b69e"
 
 def is_rank_zero(args):
     return args.rank == 0
@@ -46,7 +44,7 @@ def main_worker(gpu, ngpus_per_node, args):
     args.gpu = gpu
 
     ###################################### Load model ##############################################
-    model = EFT_v2()
+    model = EFTv2()
     ################################################################################################
 
     if args.gpu is not None:  # If a gpu is set by user: NO PARALLELISM!!
@@ -108,7 +106,7 @@ def train(model, args, epochs=10, experiment_name="DeepLab", lr=0.0001, root="."
     test_loader = DepthDataLoader(args, 'online_eval').data
 
     ###################################### losses ##############################################
-    silog_loss = SILogLoss()
+    loss_function = SigLoss(loss_weight=10, min_depth=args.min_depth, max_depth=args.max_depth, warm_up=True)
     ################################################################################################
 
     model.train()  # trun to train mode
@@ -163,14 +161,15 @@ def train(model, args, epochs=10, experiment_name="DeepLab", lr=0.0001, root="."
 
             pred = model(img)  # (bx1xhxw)
 
-            mask = depth > args.min_depth
-            train_loss = silog_loss(pred, depth, mask=mask.to(torch.bool), interpolate=True)
-            
+            # mask = depth > args.min_depth
+            # train_loss = loss(pred, depth, mask=mask.to(torch.bool), interpolate=True)
+            train_loss = loss_function(pred, depth)
+
             train_loss.backward()  # 损失的后向传播，计算梯度
             nn.utils.clip_grad_norm_(model.parameters(), 0.1)  # 可选，用于梯度剪裁
             optimizer.step()  # 使用梯度进行优化
             if should_log and step % 5 == 0:
-                wandb.log({f"Train/{silog_loss.name}": train_loss.item()}, step=step)
+                wandb.log({f"Train/{loss_function.name}": train_loss.item()}, step=step)
 
             step += 1
             scheduler.step()  # 调整LR
@@ -181,11 +180,11 @@ def train(model, args, epochs=10, experiment_name="DeepLab", lr=0.0001, root="."
 
                 ################################# Validation loop ##################################################
                 model.eval()
-                metrics, val_si = validate(args, model, test_loader, silog_loss, epoch, epochs, device)
+                metrics, val_si = validate(args, model, test_loader, loss_function, epoch, epochs, device)
                 
                 if should_log:
                     wandb.log({
-                        f"Test/{silog_loss.name}": val_si.get_value(),
+                        f"Test/{loss_function.name}": val_si.get_value(),
                     }, step=step)
 
                     wandb.log({f"Metrics/{k}": v for k, v in metrics.items()}, step=step)
@@ -207,7 +206,7 @@ def train(model, args, epochs=10, experiment_name="DeepLab", lr=0.0001, root="."
         message = dict(epoch=epoch, a1=metrics['a1'], a2=metrics['a2'], a3=metrics['a3'], 
                     abs_rel=metrics['abs_rel'],rmse=metrics['rmse'], log_10=metrics['log_10'],
                     rmse_log=metrics['rmse_log'],silog=metrics['silog'], sq_rel=metrics['sq_rel'])
-        send_massage(token, PROJECT, "#2", message)
+        send_massage(autodl_token, PROJECT, "#2", message)
     
 
     return model
@@ -227,8 +226,8 @@ def validate(args, model, test_loader, loss_function, epoch, epochs, device='cpu
             depth = depth.squeeze().unsqueeze(0).unsqueeze(0)
             pred = model(img)
 
-            mask = depth > args.min_depth
-            l_dense = loss_function(pred, depth, mask=mask.to(torch.bool), interpolate=True)
+            # mask = depth > args.min_depth
+            l_dense = loss_function(pred, depth)
             val_si.append(l_dense.item())
 
             pred = nn.functional.interpolate(pred, depth.shape[-2:], mode='bilinear', align_corners=True)

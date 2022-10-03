@@ -194,6 +194,27 @@ class MoTBlock(nn.Module):
 
         return moffn_out + mosa_out
 
+class CRPBlock(nn.Module):
+    """CRP definition"""
+    def __init__(self, in_planes, out_planes, n_stages, groups=False):
+        super(CRPBlock, self).__init__()
+        for i in range(n_stages):
+            setattr(self, '{}_{}'.format(i + 1, 'outvar_dimred'),
+                    nn.Conv2d(in_planes if (i == 0) else out_planes,
+                            out_planes, kernel_size=1, stride=1,
+                            bias=False, groups=in_planes if groups else 1))
+        self.stride = 1
+        self.n_stages = n_stages
+        self.maxpool = nn.MaxPool2d(kernel_size=5, stride=1, padding=2)
+
+    def forward(self, x):
+        top = x
+        for i in range(self.n_stages):
+            top = self.maxpool(top)
+            top = getattr(self, '{}_{}'.format(i + 1, 'outvar_dimred'))(top)
+            x = top + x
+        return x
+
 
 def _make_divisible(v, divisor, min_value=None):
     """

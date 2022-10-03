@@ -2,22 +2,16 @@ import time
 import os
 
 import cv2
+from matplotlib.style import use
 import numpy as np
 import torch
 import torchvision.transforms as transforms
-from models import EFT, EFTv2, MidasNet, MidasNet_small
+from models import EFT, EFTv2, EFTv2_1
 from models.midas.midas_net_custom import MidasNet_small
 
 def FPS(model,input_size=224):
     import time
-    model.eval()
-
-    # for x in range(0,200):
-    #     input = torch.randn(1, 3, input_size, input_size).cuda()
-    #     with torch.no_grad():
-    #         # import ipdb;ipdb.set_trace()
-    #         output = model.forward(input)
-        
+    model.eval() 
     total=0
     for x in range(0,200):
         input = torch.randn(1, 3, input_size, input_size).cuda()
@@ -52,20 +46,20 @@ device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cp
 print('Device: {}'.format(device))
 
 # Initial model
-# model = EFTv2()
-model = EFTv2()
+model = EFTv2_1()
+# model = EFTv2(use_dw=False)
 # model = EFT(model='l3')
 FPS(model.cuda(), 224)
 flops(model.cuda(), 224)
 exit()
 
 # Load pretrained model
-# ckpt = 'checkpoints\EFT_l3_kitti_27-Sep_16-06-nodebs4-tep100-lr0.000357-wd0.1_best.pt'
-# model.load_state_dict(torch.load(ckpt), strict=False)
+ckpt = 'saved_models\EFTv2_[4,4,10,10]_nyu_30-Sep_22-09-nodebs5-tep100-lr0.000357-wd0.1_best.pt'
+model.load_state_dict(torch.load(ckpt), strict=False)
 model.to(device)
 model.eval()
 
-cap = cv2.VideoCapture(1)
+cap = cv2.VideoCapture(0)
 
 while cap.isOpened():
     success, img = cap.read()

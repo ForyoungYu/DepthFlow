@@ -4,8 +4,8 @@
 DATAPATH='C:\dataset\kitti\input'
 GTPATH='C:\dataset\kitti\gt_depth'
 # Linux Path
-DATAPATH='dataset/kitti/input'
-GTPATH='dataset/kitti/gt_depth'
+# DATAPATH='dataset/kitti/input'
+# GTPATH='dataset/kitti/gt_depth'
 MAXDEPTH=150
 MINDEPTH=1
 

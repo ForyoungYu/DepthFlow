@@ -6,7 +6,7 @@ import numpy as np
 import torch
 import torchvision.transforms as transforms
 
-from models import EFT
+from models import EFT, EFTv2
 
 
 input_path = 'input'
@@ -18,10 +18,10 @@ device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cp
 print('Device: {}'.format(device))
 
 # Define model
-model = EFT(model='l3')
+model = EFTv2()
 
 # Load pretrained model
-ckpt = ''
+ckpt = 'saved_models\EFTv2_[4,4,10,10]_nyu_30-Sep_22-09-nodebs5-tep100-lr0.000357-wd0.1_best.pt'
 model.load_state_dict(torch.load(ckpt), strict=False)
 model.to(device)
 model.eval()
