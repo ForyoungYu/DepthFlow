@@ -2,33 +2,6 @@ import torch
 import torch.nn as nn
 
 
-class SILogLoss(nn.Module):
-    def __init__(self):
-        super(SILogLoss, self).__init__()
-        self.name = 'SILog'
-        self.eps = 0.001  # avoid grad explode
-
-    def forward(self, input, target, mask=None, interpolate=True):
-        # n, c, h, w = target.shape
-        if interpolate:
-            # interpolate input shape: n, c, h, w
-            input = nn.functional.interpolate(input,
-                                              target.shape[-2:],
-                                              mode='bilinear',
-                                              align_corners=True)
-
-        if mask is not None:  # 对mask为True的值进行保留，并转换成一维数据
-            input = input[mask]
-            target = target[mask]
-        g = torch.log(input + self.eps) - torch.log(target + self.eps)
-        # n, c, h, w = g.shape
-        # norm = 1/(h*w)  # 1/T
-        # Dg = norm * torch.sum(g**2) - (0.85*(norm**2)) * (torch.sum(g))**2  # Dg >=0
-        Dg = torch.var(g) + 0.15 * torch.pow(torch.mean(g), 2)
-        # print("Dg: {}".format(Dg))
-        return 10 * torch.sqrt(Dg)
-
-
 class SigLoss(nn.Module):
     """SigLoss.
         We adopt the implementation in `Adabins <https://github.com/shariqfarooq123/AdaBins/blob/main/loss.py>`_.

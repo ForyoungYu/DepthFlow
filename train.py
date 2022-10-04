@@ -18,7 +18,7 @@ import utils
 import wandb
 from dataloader import DepthDataLoader
 from loss import SigLoss
-from models import EFT, EFTv2
+from models import EFT, EFTv2, EFTv2_1
 from utils import RunningAverage, colorize, send_massage
 
 # os.environ['WANDB_MODE'] = 'dryrun'
@@ -44,7 +44,7 @@ def main_worker(gpu, ngpus_per_node, args):
     args.gpu = gpu
 
     ###################################### Load model ##############################################
-    model = EFTv2()
+    model = EFTv2_1()
     ################################################################################################
 
     if args.gpu is not None:  # If a gpu is set by user: NO PARALLELISM!!
@@ -137,6 +137,10 @@ def train(model, args, epochs=10, experiment_name="DeepLab", lr=0.0001, root="."
                                               base_momentum=0.85, max_momentum=0.95, last_epoch=args.last_epoch,
                                               div_factor=args.div_factor,
                                               final_div_factor=args.final_div_factor)
+
+    # load pretrained arguments
+    if args.load_weights:
+        model_io.load_weights(model, args.load_weights)
     # import params from checkpoints
     if args.resume != '' and scheduler is not None:
         model, optimizer, args.epoch, step, best_loss = model_io.load_checkpoint(args.resume, model, optimizer)
@@ -188,14 +192,14 @@ def train(model, args, epochs=10, experiment_name="DeepLab", lr=0.0001, root="."
                     }, step=step)
 
                     wandb.log({f"Metrics/{k}": v for k, v in metrics.items()}, step=step)
-                    model_io.save_checkpoint(model, optimizer, epoch, best_loss, f"{experiment_name}_{run_id}_latest.pt",
+                    model_io.save_checkpoint(model, optimizer, epoch, step, best_loss, f"{experiment_name}_{run_id}_latest.pt",
                                              root=os.path.join(root, "checkpoints"))
                     model_io.save_weights(model, f"{experiment_name}_{run_id}_latest.pt")
                     # Draw Picture
                     log_images(img, depth, pred, args, step)
 
                 if metrics['abs_rel'] < best_loss and should_write:
-                    model_io.save_checkpoint(model, optimizer, epoch,best_loss, f"{experiment_name}_{run_id}_best.pt",
+                    model_io.save_checkpoint(model, optimizer, epoch, step, best_loss, f"{experiment_name}_{run_id}_best.pt",
                                              root=os.path.join(root, "checkpoints"))
                     model_io.save_weights(model, f"{experiment_name}_{run_id}_best.pt")
                     best_loss = metrics['abs_rel']
@@ -206,8 +210,8 @@ def train(model, args, epochs=10, experiment_name="DeepLab", lr=0.0001, root="."
         message = dict(epoch=epoch, a1=metrics['a1'], a2=metrics['a2'], a3=metrics['a3'], 
                     abs_rel=metrics['abs_rel'],rmse=metrics['rmse'], log_10=metrics['log_10'],
                     rmse_log=metrics['rmse_log'],silog=metrics['silog'], sq_rel=metrics['sq_rel'])
-        send_massage(autodl_token, PROJECT, "#2", message)
-    
+        
+    send_massage(autodl_token, PROJECT, "Epoch %d" % message['epoch'], message)
 
     return model
 
@@ -297,6 +301,7 @@ if __name__ == '__main__':
     parser.add_argument("--distributed", default=False, action="store_true", help="Use DDP if set")
     parser.add_argument("--root", default=".", type=str,
                         help="Root folder to save data in")
+    parser.add_argument("--load_weights", default=False, help="Load weights from file")
     parser.add_argument("--resume", default='', type=str, help="Resume from checkpoint")
 
     parser.add_argument("--notes", default='', type=str, help="Wandb notes")
@@ -343,7 +348,7 @@ if __name__ == '__main__':
     parser.add_argument('--max_depth_eval', type=float, help='maximum depth for evaluation', default=10)
     parser.add_argument('--eigen_crop', default=True, help='if set, crops according to Eigen NIPS14',
                         action='store_true')
-    parser.add_argument('--garg_crop', help='if set, crops according to Garg  ECCV16', action='store_true')
+    parser.add_argument('--garg_crop', help='if set, crops according to Garg ECCV16', action='store_true')
 
     if sys.argv.__len__() == 2:
         arg_filename_with_prefix = '@' + sys.argv[1]

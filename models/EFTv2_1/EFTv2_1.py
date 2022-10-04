@@ -3,7 +3,7 @@ import torch.nn as nn
 
 from .efficientformer import EfficientFormer
 from ..modules.base_model import BaseModel
-from .blocks import FeatureFusionBlock_custom, Interpolate, _make_crp
+from .blocks import FeatureFusionBlock_custom, Interpolate, _make_scratch
 """
 添加了MoCoVit模块和dwconv
 
@@ -64,7 +64,7 @@ class EFTv2_1(BaseModel):
         self.backbone = Backbone()
 
         # Neck
-        self.scratch = _make_crp(features, features)
+        self.scratch = _make_scratch(features, features, dw=False)
 
         # Fusion
         use_dw = False
@@ -140,20 +140,20 @@ class EFTv2_1(BaseModel):
         # print(out[2].shape)
         # print(out[3].shape)
 
-        crp1 = self.scratch.layer1(out[0])
-        crp2 = self.scratch.layer2(out[1])
-        crp3 = self.scratch.layer3(out[2])
-        crp4 = self.scratch.layer4(out[3])
+        layer_1_rn = self.scratch.layer1_rn(out[0])
+        layer_2_rn = self.scratch.layer2_rn(out[1])
+        layer_3_rn = self.scratch.layer3_rn(out[2])
+        layer_4_rn = self.scratch.layer4_rn(out[3])
         # print('=== layers ===')
         # print(layer_1_rn.shape)
         # print(layer_2_rn.shape)
         # print(layer_3_rn.shape)
         # print(layer_4_rn.shape)
 
-        path_4 = self.scratch.refinenet4(crp4)
-        path_3 = self.scratch.refinenet3(path_4, crp3)
-        path_2 = self.scratch.refinenet2(path_3, crp2)
-        path_1 = self.scratch.refinenet1(path_2, crp1)
+        path_4 = self.scratch.refinenet4(layer_4_rn)
+        path_3 = self.scratch.refinenet3(path_4, layer_3_rn)
+        path_2 = self.scratch.refinenet2(path_3, layer_2_rn)
+        path_1 = self.scratch.refinenet1(path_2, layer_1_rn)
         # print('=== pathes ===')
         # print("path_4 " + str(path_4.shape))
         # print("path3 " + str(path_3.shape))

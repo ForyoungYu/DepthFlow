@@ -11,7 +11,12 @@ import requests
 
 
 def send_massage(token, title, name, msg:dict):
-    content = "Epoch: {} Abs Rel.: {}".format(msg['epoch'], msg['abs_rel'])
+    content ="a1: {:.3f} a2: {:.3f} a3: {:.3f} | Abs Rel.: {:.3f} Sq Rel.: {:.3f} | \
+        RMSE: {:.3f} RMSELog: {:.3f} | SiLog: {:.3f} Log10: {:.3f}".format(\
+            msg['a1'], msg['aa'], msg['a3'], \
+            msg['abs_rel'], msg['sq_rel'], \
+            msg['rmse'], msg['rmse_log'], \
+            msg['silog'], msg['log_10'])
     resp = requests.post("https://www.autodl.com/api/v1/wechat/message/push",
                         json={
                             "token": token,

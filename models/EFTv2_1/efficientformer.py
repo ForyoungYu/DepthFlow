@@ -346,21 +346,23 @@ def meta_blocks_cumtom(dim, index, layers,
     # if index == 3 and vit_num == layers[index]:
     #     blocks.append(Flat())
     for block_idx in range(layers[index]):
-        block_dpr = drop_path_rate * (
-                block_idx + sum(layers[:index])) / (sum(layers) - 1)
-        if index == 2 or index == 3:
-            hidden_dim = _make_divisible(dim / exp_size, 4)
-            blocks.append(MoTBlock(inp=dim, hidden_dim=hidden_dim, oup=dim))
-        else:
-            blocks.append(Meta4D(
-                dim, pool_size=pool_size, mlp_ratio=mlp_ratio,
-                act_layer=act_layer,
-                drop=drop_rate, drop_path=block_dpr,
-                use_layer_scale=use_layer_scale,
-                layer_scale_init_value=layer_scale_init_value,
-            ))
-            if index == 3 and layers[index] - block_idx - 1 == vit_num:
-                blocks.append(Flat())
+        # block_dpr = drop_path_rate * (
+        #         block_idx + sum(layers[:index])) / (sum(layers) - 1)
+        # if index == 2 or index == 3:
+        #     hidden_dim = _make_divisible(dim / exp_size, 4)
+        #     blocks.append(MoTBlock(inp=dim, hidden_dim=hidden_dim, oup=dim))
+        # else:
+        #     blocks.append(Meta4D(
+        #         dim, pool_size=pool_size, mlp_ratio=mlp_ratio,
+        #         act_layer=act_layer,
+        #         drop=drop_rate, drop_path=block_dpr,
+        #         use_layer_scale=use_layer_scale,
+        #         layer_scale_init_value=layer_scale_init_value,
+        #     ))
+        hidden_dim = _make_divisible(dim / exp_size, 4)
+        blocks.append(MoTBlock(inp=dim, hidden_dim=hidden_dim, oup=dim))
+            # if index == 3 and layers[index] - block_idx - 1 == vit_num:
+            #     blocks.append(Flat())
 
     blocks = nn.Sequential(*blocks)
     return blocks
