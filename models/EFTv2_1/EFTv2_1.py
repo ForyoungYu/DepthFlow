@@ -3,16 +3,15 @@ import torch.nn as nn
 
 from .efficientformer import EfficientFormer
 from ..modules.base_model import BaseModel
-from .blocks import FeatureFusionBlock_custom, Interpolate, _make_scratch
+from .blocks import FeatureFusionBlock_custom, Interpolate, _make_scratch, _make_crp
 """
 添加了MoCoVit模块和dwconv
-
+修改FeatureFusionBlock_custom使得其可以自由设定维度
 """
 
 # 每个stage的MB输出维度
 features = {
-    # 'l1': [48, 96, 224, 448],
-    'l1': [48, 96, 192, 384],
+    'l1': [48, 96, 224, 448],
     'l3': [64, 128, 256, 512],
     'l7': [96, 192, 384, 768],
     'custom': [64, 128, 256, 512]
@@ -23,77 +22,67 @@ depth = {
     'l1': [3, 2, 6, 4],
     'l3': [4, 4, 12, 6],
     'l7': [6, 6, 18, 8],
-    'custom': [4, 4, 10, 10]
+    'custom': [4, 4, 12, 6]
 }
 
 
-class Backbone(EfficientFormer):
-    def __init__(self, **kwargs):
-        super().__init__(layers=depth['custom'],
-                         embed_dims=features['custom'],
-                         downsamples=[True, True, True, True],
-                         layer_scale_init_value=1e-6,
-                         fork_feat=True,
-                         vit_num=8,
-                         act_layer=nn.ReLU,
-                         **kwargs)
-
-
-# My Code
 class EFTv2_1(BaseModel):
     def __init__(self,
                  path=None,
+                 layers=depth['custom'],
                  features=features['custom'],
                  non_negative=True,
                  channels_last=False,
                  use_bn=True,
-                 align_corners=True,
-                 blocks={'expand': True}):
+                 align_corners=True):
         if path:
             print("Loading weights: ", path)
 
         super(EFTv2_1, self).__init__()
 
         self.channels_last = channels_last
-        self.blocks = blocks
-
-        if "expand" in self.blocks and self.blocks['expand'] == True:
-            self.expand = True
 
         # Backbone
-        self.backbone = Backbone()
+        self.backbone = EfficientFormer(layers=layers,
+                         embed_dims=features,
+                         downsamples=[True, True, True, True],
+                         layer_scale_init_value=1e-6,
+                         fork_feat=True,
+                         act_layer=nn.ReLU)
 
+        use_dw = True
         # Neck
-        self.scratch = _make_scratch(features, features, dw=False)
+        # self.scratch = _make_scratch(features, features, dw=use_dw)
+        self.scratch = _make_crp(features, features, stages=4)
 
         # Fusion
-        use_dw = False
         self.scratch.activation = nn.ReLU(False)
         self.scratch.refinenet4 = FeatureFusionBlock_custom(
             features[3],
-            self.scratch.activation,
-            deconv=False,
-            bn=use_bn,
-            dw=use_dw,
-            expand=self.expand,
-            align_corners=align_corners)
-        self.scratch.refinenet3 = FeatureFusionBlock_custom(
             features[2],
             self.scratch.activation,
             deconv=False,
             bn=use_bn,
             dw=use_dw,
-            expand=self.expand,
             align_corners=align_corners)
-        self.scratch.refinenet2 = FeatureFusionBlock_custom(
+        self.scratch.refinenet3 = FeatureFusionBlock_custom(
+            features[2],
             features[1],
             self.scratch.activation,
             deconv=False,
             bn=use_bn,
             dw=use_dw,
-            expand=self.expand,
+            align_corners=align_corners)
+        self.scratch.refinenet2 = FeatureFusionBlock_custom(
+            features[1],
+            features[0],
+            self.scratch.activation,
+            deconv=False,
+            bn=use_bn,
+            dw=use_dw,
             align_corners=align_corners)
         self.scratch.refinenet1 = FeatureFusionBlock_custom(
+            features[0],
             features[0],
             self.scratch.activation,
             deconv=False,

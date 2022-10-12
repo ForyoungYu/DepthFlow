@@ -177,6 +177,27 @@ def compute_errors(gt, pred):
     return dict(a1=a1, a2=a2, a3=a3, abs_rel=abs_rel, rmse=rmse, log_10=log_10, rmse_log=rmse_log,
                 silog=silog, sq_rel=sq_rel)
 
+def FPS(model,input_size=224):
+    import time
+    model.eval() 
+    total=0
+    for x in range(0,200):
+        input = torch.randn(1, 3, input_size, input_size).cuda()
+        with torch.no_grad():
+            a = time.perf_counter()
+            output = model.forward(input)
+            torch.cuda.synchronize()
+            b = time.perf_counter()
+            total+=b-a
+    print('FPS:', str(200/total))
+    print('ms:', str(1000*total/200))
+
+def flops(model, input_size):
+    from thop import profile, clever_format
+    input = torch.rand(1, 3, input_size, input_size).cuda()
+    flops, params = profile(model.cuda(), inputs=(input, ))
+    flops, params = clever_format([flops, params], "%.3f")
+    print('flops: {}, params: {}'.format(flops, params))
 
 ##################################### Demo Utilities ############################################
 def b64_to_pil(b64string):

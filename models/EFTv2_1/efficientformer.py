@@ -341,28 +341,22 @@ def meta_blocks_cumtom(dim, index, layers,
                 pool_size=3, mlp_ratio=4.,
                 act_layer=nn.GELU, exp_size=3,
                 drop_rate=.0, drop_path_rate=0.,
-                use_layer_scale=True, layer_scale_init_value=1e-5, vit_num=1):
+                use_layer_scale=True, layer_scale_init_value=1e-5):
     blocks = []
-    # if index == 3 and vit_num == layers[index]:
-    #     blocks.append(Flat())
+    hidden_dim = _make_divisible(dim / exp_size, 4)
     for block_idx in range(layers[index]):
-        # block_dpr = drop_path_rate * (
-        #         block_idx + sum(layers[:index])) / (sum(layers) - 1)
-        # if index == 2 or index == 3:
-        #     hidden_dim = _make_divisible(dim / exp_size, 4)
-        #     blocks.append(MoTBlock(inp=dim, hidden_dim=hidden_dim, oup=dim))
-        # else:
-        #     blocks.append(Meta4D(
-        #         dim, pool_size=pool_size, mlp_ratio=mlp_ratio,
-        #         act_layer=act_layer,
-        #         drop=drop_rate, drop_path=block_dpr,
-        #         use_layer_scale=use_layer_scale,
-        #         layer_scale_init_value=layer_scale_init_value,
-        #     ))
-        hidden_dim = _make_divisible(dim / exp_size, 4)
-        blocks.append(MoTBlock(inp=dim, hidden_dim=hidden_dim, oup=dim))
-            # if index == 3 and layers[index] - block_idx - 1 == vit_num:
-            #     blocks.append(Flat())
+        block_dpr = drop_path_rate * (
+                block_idx + sum(layers[:index])) / (sum(layers) - 1)
+        if index == 2 or index == 3:
+            blocks.append(MoTBlock(inp=dim, hidden_dim=hidden_dim, oup=dim))
+        else:
+            blocks.append(Meta4D(
+                dim, pool_size=pool_size, mlp_ratio=mlp_ratio,
+                act_layer=act_layer,
+                drop=drop_rate, drop_path=block_dpr,
+                use_layer_scale=use_layer_scale,
+                layer_scale_init_value=layer_scale_init_value,
+            ))
 
     blocks = nn.Sequential(*blocks)
     return blocks
@@ -378,9 +372,6 @@ class EfficientFormer(nn.Module):
                  drop_rate=0., drop_path_rate=0.,
                  use_layer_scale=True, layer_scale_init_value=1e-5,
                  fork_feat=False,
-                 init_cfg=None,
-                 pretrained=None,
-                 vit_num=1,
                  distillation=True,
                  **kwargs):
 
@@ -394,15 +385,14 @@ class EfficientFormer(nn.Module):
 
         # set the main block in network
         network = []
-        for i in range(len(layers)): # len(layers)：4
+        for i in range(len(layers)):
             stage = meta_blocks_cumtom(embed_dims[i], i, layers,
                                 pool_size=pool_size, mlp_ratio=mlp_ratios,
                                 act_layer=act_layer, exp_size=3,
                                 drop_rate=drop_rate,
                                 drop_path_rate=drop_path_rate,
                                 use_layer_scale=use_layer_scale,
-                                layer_scale_init_value=layer_scale_init_value,
-                                vit_num=vit_num)
+                                layer_scale_init_value=layer_scale_init_value)
             network.append(stage)
             if i >= len(layers) - 1: #  最后一阶段无需下采样
                 break

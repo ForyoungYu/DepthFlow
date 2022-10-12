@@ -10,7 +10,7 @@ from tqdm import tqdm
 
 import model_io
 from dataloader import DepthDataLoader
-from models import UnetAdaptiveBins
+from models import EFTv2, joint_depth
 from utils import RunningAverageDict
 
 
@@ -43,7 +43,7 @@ def compute_errors(gt, pred):
 #     return x * std + mean
 
 def predict_tta(model, image, args):
-    pred = model(image)[-1]
+    pred = model(image)
     #     pred = utils.depth_norm(pred)
     #     pred = nn.functional.interpolate(pred, depth.shape[-2:], mode='bilinear', align_corners=True)
     #     pred = np.clip(pred.cpu().numpy(), 10, 1000)/100.
@@ -51,7 +51,7 @@ def predict_tta(model, image, args):
 
     image = torch.Tensor(np.array(image.cpu().numpy())[..., ::-1].copy()).to(device)
 
-    pred_lr = model(image)[-1]
+    pred_lr = model(image)
     #     pred_lr = utils.depth_norm(pred_lr)
     #     pred_lr = nn.functional.interpolate(pred_lr, depth.shape[-2:], mode='bilinear', align_corners=True)
     #     pred_lr = np.clip(pred_lr.cpu().numpy()[...,::-1], 10, 1000)/100.
@@ -67,7 +67,7 @@ def eval(model, test_loader, args, gpus=None, ):
     else:
         device = gpus[0]
 
-    if args.save_dir is not None:
+    if args.save_dir is not None and not os.path.exists(os.path.join(args.root, args.save_dir)):
         os.makedirs(args.save_dir)
 
     metrics = RunningAverageDict()
@@ -92,7 +92,7 @@ def eval(model, test_loader, args, gpus=None, ):
 
             if args.save_dir is not None:
                 if args.dataset == 'nyu':
-                    impath = f"{batch['image_path'][0].replace('/', '__').replace('.jpg', '')}"
+                    impath = f"{batch['image_path'][0].replace('/', '_').replace('.jpg', '')}"
                     factor = 1000
                 else:
                     dpath = batch['image_path'][0].split('/')
@@ -194,7 +194,7 @@ if __name__ == '__main__':
     parser.add_argument('--max_depth_eval', type=float, help='maximum depth for evaluation', default=10)
     parser.add_argument('--eigen_crop', help='if set, crops according to Eigen NIPS14', action='store_true')
     parser.add_argument('--garg_crop', help='if set, crops according to Garg  ECCV16', action='store_true')
-    parser.add_argument('--do_kb_crop', help='Use kitti benchmark cropping', action='store_true')
+    # parser.add_argument('--do_kb_crop', help='Use kitti benchmark cropping', action='store_true')
 
     if sys.argv.__len__() == 2:
         arg_filename_with_prefix = '@' + sys.argv[1]
@@ -207,8 +207,9 @@ if __name__ == '__main__':
     args.distributed = False
     device = torch.device('cuda:{}'.format(args.gpu))
     test = DepthDataLoader(args, 'online_eval').data
-    model = UnetAdaptiveBins.build(n_bins=args.n_bins, min_val=args.min_depth, max_val=args.max_depth,
-                                   norm='linear').to(device)
+
+    # model = EFTv2().to(device)
+    model = joint_depth(5, 2).to(device)
     model = model_io.load_checkpoint(args.checkpoint_path, model)[0]
     model = model.eval()
 

@@ -5,6 +5,7 @@ wandb
 dataset
 checkpoints
 saved_models
+test_output
 weights
 output
 input/*

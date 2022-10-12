@@ -277,7 +277,7 @@ class FeatureFusionBlock_custom(nn.Module):
     """Feature fusion block.
     """
 
-    def __init__(self, features, activation, deconv=False, bn=False, dw=False, expand=False, align_corners=True):
+    def __init__(self, inp, oup, activation, deconv=False, bn=False, dw=False, align_corners=True):
         """Init.
 
         Args:
@@ -290,15 +290,15 @@ class FeatureFusionBlock_custom(nn.Module):
 
         self.groups=1
 
-        self.expand = expand
-        out_features = features
-        if self.expand==True:
-            out_features = features//2
+        # self.expand = expand
+        # out_features = inp
+        # if self.expand==True:
+        #     out_features = oup
         
-        self.out_conv = nn.Conv2d(features, out_features, kernel_size=1, stride=1, padding=0, bias=True, groups=1)
+        self.out_conv = nn.Conv2d(inp, oup, kernel_size=1, stride=1, padding=0, bias=True, groups=1)
 
-        self.resConfUnit1 = ResidualConvUnit_custom(features, activation, bn, dw)
-        self.resConfUnit2 = ResidualConvUnit_custom(features, activation, bn, dw)
+        self.resConfUnit1 = ResidualConvUnit_custom(inp, activation, bn, dw)
+        self.resConfUnit2 = ResidualConvUnit_custom(inp, activation, bn, dw)
         
         self.skip_add = nn.quantized.FloatFunctional()
 

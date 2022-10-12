@@ -90,7 +90,7 @@ def train(model, args, epochs=10, experiment_name="DeepLab", lr=0.0001, root="."
     print(f"Training {experiment_name}")
 
     # run_id = f"{dt.now().strftime('%d-%h_%H-%M')}-nodebs{args.bs}-tep{epochs}-lr{lr}-wd{args.wd}-{uuid.uuid4()}"
-    run_id = f"{dt.now().strftime('%d-%h_%H-%M')}-nodebs{args.bs}-tep{epochs}-lr{lr}-wd{args.wd}"
+    run_id = f"{dt.now().strftime('%d-%h_%H-%M')}-bs{args.bs}-tep{epochs}-lr{lr}-wd{args.wd}"
     name = f"{experiment_name}_{run_id}"
     should_write = ((not args.distributed) or args.rank == 0)
     should_log = should_write and logging
@@ -194,15 +194,15 @@ def train(model, args, epochs=10, experiment_name="DeepLab", lr=0.0001, root="."
                     wandb.log({f"Metrics/{k}": v for k, v in metrics.items()}, step=step)
                     model_io.save_checkpoint(model, optimizer, epoch, step, best_loss, f"{experiment_name}_{run_id}_latest.pt",
                                              root=os.path.join(root, "checkpoints"))
-                    model_io.save_weights(model, f"{experiment_name}_{run_id}_latest.pt")
+                    # model_io.save_weights(model, f"{experiment_name}_{run_id}_latest.pt")
                     # Draw Picture
                     log_images(img, depth, pred, args, step)
 
-                if metrics['abs_rel'] < best_loss and should_write:
-                    model_io.save_checkpoint(model, optimizer, epoch, step, best_loss, f"{experiment_name}_{run_id}_best.pt",
-                                             root=os.path.join(root, "checkpoints"))
-                    model_io.save_weights(model, f"{experiment_name}_{run_id}_best.pt")
-                    best_loss = metrics['abs_rel']
+                    if metrics['abs_rel'] < best_loss and should_write:
+                        model_io.save_checkpoint(model, optimizer, epoch, step, best_loss, f"{experiment_name}_{run_id}_best.pt",
+                                                root=os.path.join(root, "checkpoints"))
+                        model_io.save_weights(model, f"{experiment_name}_{run_id}_best.pt")
+                        best_loss = metrics['abs_rel']
                 model.train()
                 #################################################################################################
         
@@ -211,7 +211,7 @@ def train(model, args, epochs=10, experiment_name="DeepLab", lr=0.0001, root="."
                     abs_rel=metrics['abs_rel'],rmse=metrics['rmse'], log_10=metrics['log_10'],
                     rmse_log=metrics['rmse_log'],silog=metrics['silog'], sq_rel=metrics['sq_rel'])
         
-    send_massage(autodl_token, PROJECT, "Epoch %d" % message['epoch'], message)
+        send_massage(autodl_token, PROJECT, "Epoch %d" % message['epoch'], message)
 
     return model
 

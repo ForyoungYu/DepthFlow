@@ -27,7 +27,6 @@
         "EFT_l3_nyu",
         "--dataset",
         "nyu",
-        "--do_kb_crop",
         "--epochs",
         "100",
         "--same_lr",

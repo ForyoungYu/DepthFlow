@@ -6,8 +6,7 @@ from matplotlib.style import use
 import numpy as np
 import torch
 import torchvision.transforms as transforms
-from models import EFT, EFTv2, EFTv2_1
-from models.midas.midas_net_custom import MidasNet_small
+from models import EFT, EFTv2, EFTv2_1, joint_depth
 
 def FPS(model,input_size=224):
     import time
