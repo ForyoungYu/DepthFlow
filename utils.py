@@ -13,7 +13,7 @@ import requests
 def send_massage(token, title, name, msg:dict):
     content ="a1: {:.3f} a2: {:.3f} a3: {:.3f} | Abs Rel.: {:.3f} Sq Rel.: {:.3f} | \
         RMSE: {:.3f} RMSELog: {:.3f} | SiLog: {:.3f} Log10: {:.3f}".format(\
-            msg['a1'], msg['aa'], msg['a3'], \
+            msg['a1'], msg['a2'], msg['a3'], \
             msg['abs_rel'], msg['sq_rel'], \
             msg['rmse'], msg['rmse_log'], \
             msg['silog'], msg['log_10'])
@@ -62,7 +62,7 @@ class RunningAverageDict:
         return {key: value.get_value() for key, value in self._dict.items()}
 
 
-def colorize(value, vmin=10, vmax=1000, cmap='magma'):
+def colorize(value, vmin=10, vmax=1000, cmap='magma_r'):
     value = value.detach().cpu().numpy()[0, :, :]
     # value = np.log10(value)
 

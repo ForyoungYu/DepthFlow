@@ -35,7 +35,7 @@ def log_images(img, depth, pred, args, step):
     pred = colorize(pred, vmin=args.min_depth, vmax=args.max_depth)
     wandb.log(
         {
-            "_Input": [wandb.Image(img)],
+            "_Input": [wandb.Image(img[0])],
             "_GT": [wandb.Image(depth)],
             "_Prediction": [wandb.Image(pred)]
         }, step=step)

@@ -106,7 +106,7 @@ class Net(nn.Module):
                        ]
     in_planes = 32 # number of input channels
     num_layers = len(mobilenet_config)
-    def __init__(self, num_classes, num_tasks=2):
+    def __init__(self, num_tasks=2):
         super(Net, self).__init__()
         self.num_tasks = num_tasks
         assert self.num_tasks in [2, 3], "Number of tasks supported is either 2 or 3, got {}".format(self.num_tasks)
@@ -142,7 +142,7 @@ class Net(nn.Module):
         self.depth = conv3x3(256, 1, bias=True)
 
         self.pre_segm = conv1x1(256, 256, groups=256, bias=False)
-        self.segm = conv3x3(256, num_classes, bias=True)
+        # self.segm = conv3x3(256, num_classes, bias=True)
         self.relu = nn.ReLU6(inplace=True)
 
         if self.num_tasks == 3:
@@ -183,21 +183,22 @@ class Net(nn.Module):
         l3 = self.relu(l3 + l4)
         l3 = self.crp1(l3)
         
-        out_segm = self.pre_segm(l3)
-        out_segm = self.relu(out_segm)
-        out_segm = self.segm(out_segm)
+        # out_segm = self.pre_segm(l3)
+        # out_segm = self.relu(out_segm)
+        # out_segm = self.segm(out_segm)
 
         out_d = self.pre_depth(l3)
         out_d = self.relu(out_d)
         out_d = self.depth(out_d)
 
-        if self.num_tasks == 3:
-            out_n = self.pre_normal(l3)
-            out_n = self.relu(out_n)
-            out_n = self.normal(out_n)
-            return out_segm, out_d, out_n
-        else:
-            return out_segm, out_d
+        # if self.num_tasks == 3:
+        #     out_n = self.pre_normal(l3)
+        #     out_n = self.relu(out_n)
+        #     out_n = self.normal(out_n)
+        #     return out_segm, out_d, out_n
+        # else:
+        #     return out_segm, out_d
+        return out_d
 
     def _initialize_weights(self):
         for m in self.modules():
@@ -213,20 +214,21 @@ class Net(nn.Module):
         layers = [CRPBlock(in_planes, out_planes,stages, groups=groups)]
         return nn.Sequential(*layers)
     
-def net(num_classes, num_tasks):
-    """Constructs the network.
+# def net(num_classes, num_tasks):
+#     """Constructs the network.
 
-    Args:
-        num_classes (int): the number of classes for the segmentation head to output.
-        num_tasks (int): the number of tasks, either 2 - segm + depth, or 3 - segm + depth + normals
+#     Args:
+#         num_classes (int): the number of classes for the segmentation head to output.
+#         num_tasks (int): the number of tasks, either 2 - segm + depth, or 3 - segm + depth + normals
 
-    """
-    model = Net(num_classes, num_tasks)
-    return model
+#     """
+#     model = Net(num_classes, num_tasks)
+#     return model
 
 if __name__ == '__main__':
     input = torch.randn(1, 3, 224, 224)
-    model = net(5, 2)
-    seg, depth = model(input)
-    print(seg.shape)
+    model = Net()
+    # model = net(5, 2)
+    depth = model(input)
+    # print(seg.shape)
     print(depth.shape)
